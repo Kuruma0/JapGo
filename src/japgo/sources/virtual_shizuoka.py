@@ -55,8 +55,50 @@ class VirtualShizuokaAdapter(SourceAdapter):
         from ..geo.crs import SHIZUOKA
 
         self.target_crs = assert_metric(target_crs or SHIZUOKA.crs)
+        self._cache_key: tuple[str, bool] | None = None
+        self._cache: tuple[np.ndarray, np.ndarray, np.ndarray, list[str]] | None = None
 
     # -----------------------------------------------------------------------------------------
+
+    def load_points(
+        self, path: Path, *, ground_only: bool = True
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str]]:
+        """Parse a LAS/LAZ file into filtered (x, y, z) arrays, cached by path.
+
+        A tile-by-tile build otherwise re-parses the same ~300 MB file once per overlapping tile.
+        The cache holds one file, which is the right size for a row-major tile walk: consecutive
+        tiles hit the same file, and moving to the next file evicts the previous one rather than
+        accumulating hundreds of megabytes.
+        """
+        key = (str(path), ground_only)
+        if self._cache_key == key and self._cache is not None:
+            return self._cache
+
+        import laspy
+
+        with laspy.open(path) as reader:
+            points = reader.read()
+
+        x = np.asarray(points.x, dtype=np.float64)
+        y = np.asarray(points.y, dtype=np.float64)
+        z = np.asarray(points.z, dtype=np.float64)
+        classification = np.asarray(getattr(points, "classification", []), dtype=np.uint8)
+
+        warnings: list[str] = []
+        if ground_only:
+            if classification.size == x.size and np.any(classification == ASPRS_GROUND):
+                keep = classification == ASPRS_GROUND
+                x, y, z = x[keep], y[keep], z[keep]
+            else:
+                warnings.append(
+                    f"{Path(path).name}: ground_only requested but the file carries no ASPRS "
+                    "class 2 returns; the result is a SURFACE model (DSM), not bare earth. Slope "
+                    "and grade derived from it will include canopy and rooftops."
+                )
+
+        self._cache_key = key
+        self._cache = (x, y, z, warnings)
+        return self._cache
 
     def read(
         self,
@@ -79,33 +121,10 @@ class VirtualShizuokaAdapter(SourceAdapter):
         """
         self.open()  # provenance gate
 
-        import laspy
-
         path = Path(path)
-        warnings: list[str] = []
-
-        with laspy.open(path) as reader:
-            header = reader.header
-            points = reader.read()
-
-        x = np.asarray(points.x, dtype=np.float64)
-        y = np.asarray(points.y, dtype=np.float64)
-        z = np.asarray(points.z, dtype=np.float64)
-
-        classification = np.asarray(getattr(points, "classification", []), dtype=np.uint8)
+        x, y, z, load_warnings = self.load_points(path, ground_only=ground_only)
+        warnings = list(load_warnings)
         total = x.size
-
-        if ground_only:
-            if classification.size == total and np.any(classification == ASPRS_GROUND):
-                keep = classification == ASPRS_GROUND
-                x, y, z = x[keep], y[keep], z[keep]
-            else:
-                # Refuse to silently return a surface model where a terrain model was requested.
-                warnings.append(
-                    f"{path.name}: ground_only requested but the file carries no ASPRS class 2 "
-                    "returns; the result is a SURFACE model (DSM), not bare earth. Slope and grade "
-                    "derived from it will include canopy and rooftops."
-                )
 
         if x.size == 0:
             raise ValueError(f"{path}: no points remain after filtering")
@@ -143,8 +162,7 @@ class VirtualShizuokaAdapter(SourceAdapter):
                 layers=["elevation"],
                 note=(
                     f"{path.name}; {'bare-earth (ASPRS 2)' if ground_only else 'all returns'}; "
-                    f"{resolution} m grid; {x.size}/{total} points used; "
-                    f"srs={header.parse_crs() if hasattr(header, 'parse_crs') else 'from-file'}"
+                    f"{resolution} m grid; {x.size}/{total} points used"
                 ),
             ),
             warnings=warnings,
@@ -191,11 +209,22 @@ def _grid_points(
     if rows <= 0 or cols <= 0:
         raise ValueError(f"bounds {bounds} at {resolution} m yields an empty raster")
 
+    # Cheap bounding-box filter first. A production LAS file covers far more ground than one tile,
+    # so computing row/col indices over every point in the file and discarding most of them is the
+    # dominant cost of a build. Two comparisons per axis are much cheaper than two divisions.
+    near = (x >= bounds.minx) & (x < bounds.maxx) & (y >= bounds.miny) & (y < bounds.maxy)
+    if not near.all():
+        x, y, z = x[near], y[near], z[near]
+
+    if x.size == 0:
+        return Raster(np.full((rows, cols), np.nan, np.float32), bounds, crs)
+
     col = np.floor((x - bounds.minx) / resolution).astype(np.int64)
     row = np.floor((bounds.maxy - y) / resolution).astype(np.int64)
 
     inside = (col >= 0) & (col < cols) & (row >= 0) & (row < rows)
-    col, row, z = col[inside], row[inside], z[inside]
+    if not inside.all():
+        col, row, z = col[inside], row[inside], z[inside]
 
     flat = row * cols + col
     counts = np.bincount(flat, minlength=rows * cols)

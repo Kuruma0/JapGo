@@ -246,6 +246,130 @@ def tiles_channels() -> None:
         _rows(spec.targets)
 
 
+@tiles.command("build")
+@click.argument("site", required=False)
+@click.option("--data-root", type=click.Path(path_type=Path), default="data/raw", show_default=True)
+@click.option("--out", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
+@click.option("--resolution", type=float, default=1.0, show_default=True)
+@click.option("--limit", type=int, default=None, help="Build at most N tiles (for a smoke run).")
+@click.option("--all-sites", is_flag=True, help="Build every configured site.")
+@click.option(
+    "--min-coverage",
+    type=float,
+    default=0.5,
+    show_default=True,
+    help="Skip tiles with less than this fraction of real observations.",
+)
+def tiles_build(
+    site: str | None,
+    data_root: Path,
+    out: Path,
+    resolution: float,
+    limit: int | None,
+    all_sites: bool,
+    min_coverage: float,
+) -> None:
+    """Build a manifest-carrying tile set for a site.
+
+    Source files are found by convention under DATA_ROOT/<site>/{terrain,plateau,landuse,roads}/.
+    """
+    from .pipeline import RegionBuilder, SourceFiles, build_default_split, load_sites
+
+    sites = load_sites()
+    if all_sites:
+        names = list(sites.sites)
+    elif site:
+        names = [site]
+    else:
+        raise click.UsageError(
+            f"give a site or --all-sites. Configured: {', '.join(sites.sites)}"
+        )
+
+    gate = SourceGate(load_registry())
+    builder = RegionBuilder(
+        gate, sites=sites, resolution=resolution, min_coverage=min_coverage
+    )
+    written: dict[str, list[str]] = {}
+
+    for name in names:
+        if name not in sites.sites:
+            raise click.ClickException(f"unknown site {name!r}; have {', '.join(sites.sites)}")
+
+        spec = sites.sites[name]
+        files = SourceFiles.discover(data_root, name)
+        planned = builder.tiles_for(name)
+
+        click.secho(f"\n{name}  ({spec.archetype})", bold=True)
+        click.echo(f"  tiles planned : {len(planned)}")
+        click.echo(f"  sources       : {files.describe()}")
+
+        report = builder.build(name, files, out, limit=limit)
+        written[name] = report.tiles_written
+
+        colour = "green" if report.ok else "red"
+        click.secho(f"  written       : {len(report.tiles_written)}", fg=colour)
+        if report.tiles_skipped:
+            click.secho(f"  skipped       : {len(report.tiles_skipped)}", fg="yellow")
+        for warning in report.warnings[:5]:
+            click.secho(f"    {warning}", fg="yellow")
+        if len(report.warnings) > 5:
+            click.secho(f"    ... {len(report.warnings) - 5} more", fg="yellow")
+        for line in report.attribution:
+            click.echo(f"    {line}")
+
+    populated = {k: v for k, v in written.items() if v}
+    if len(populated) > 1:
+        definition = build_default_split(builder, populated)
+        path = definition.write(out / "split.json")
+        click.echo("")
+        click.secho(f"split written: {path}", bold=True)
+        click.echo(f"  {definition.counts}")
+
+
+@main.group()
+def splits() -> None:
+    """Define and validate geographic train/test splits."""
+
+
+@splits.command("show")
+@click.option("--path", type=click.Path(path_type=Path), default="data/tiles/split.json")
+def splits_show(path: Path) -> None:
+    """Show a split and validate it for geographic leakage."""
+    from .pipeline import Split, SplitDefinition, validate_split
+
+    if not path.is_file():
+        raise click.ClickException(f"no split at {path}. Run `japgo tiles build --all-sites` first.")
+
+    definition = SplitDefinition.read(path)
+    click.echo(f"buffer      : {definition.buffer_tiles} tile(s)")
+    click.echo(f"counts      : {definition.counts}")
+    click.echo("")
+    for split in (Split.TRAIN, Split.VAL, Split.TEST):
+        archetypes = definition.archetypes_in(split)
+        click.echo(
+            f"  {split.value:<6} {len(definition.tiles_in(split)):>5} tiles  "
+            f"{', '.join(sorted(archetypes)) or '-'}"
+        )
+    click.echo(f"  {'buffer':<6} {len(definition.tiles_in(Split.BUFFER)):>5} tiles  (discarded)")
+
+    overlap = definition.archetypes_in(Split.TEST) & definition.archetypes_in(Split.TRAIN)
+    if overlap:
+        click.secho(
+            f"\nwarning: test shares archetype(s) {sorted(overlap)} with train; this measures "
+            "transfer between similar places, not generalisation",
+            fg="yellow",
+        )
+
+    problems = validate_split(definition)
+    click.echo("")
+    if problems:
+        click.secho("INVALID — geography leaks between folds:", fg="red", bold=True)
+        for problem in problems:
+            click.echo(f"  {problem}")
+        sys.exit(1)
+    click.secho("valid: no geographic leakage", fg="green", bold=True)
+
+
 @main.group()
 def roads() -> None:
     """Read and measure road networks."""

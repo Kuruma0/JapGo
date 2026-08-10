@@ -1,0 +1,58 @@
+# The MVP sites (docs/site-selection.md).
+#
+# Three contrasting sites in Shizuoka Prefecture, sharing data sources, licence and CRS zone so
+# that a difference in model output is attributable to the environment rather than to the data.
+#
+# Bounding boxes are WGS84 (minlon, minlat, maxlon, maxlat) and deliberately approximate: exact
+# extents are settled on first ingest against real PLATEAU coverage. `archetype` is what the split
+# validator checks, because held-out sets must cover unseen archetypes and not merely unseen
+# cities.
+
+sites_version: 1
+zone: 8            # JGD2011 Plane Rectangular Zone 8, matching VIRTUAL SHIZUOKA as published
+
+sites:
+  hamamatsu_plain:
+    archetype: suburban_plain
+    municipality: 浜松市 / 磐田市
+    bbox: [137.70, 34.68, 137.80, 34.76]
+    note: >
+      Flat alluvial plain, regular blocks, medium-density detached housing. The easy case — if a
+      model does poorly here the pipeline is broken rather than the hypothesis.
+    expected:
+      road_density: high
+      orientation_entropy: low
+      grade: near-zero
+
+  kawanehon_valley:
+    archetype: mountain_valley
+    municipality: 川根本町
+    bbox: [138.05, 35.05, 138.15, 35.15]
+    note: >
+      Upper Ōi River valley with the Ōigawa Railway. Settlement pinned to the valley floor, roads
+      forced onto contours. The site where the project's thesis is falsifiable: a model that has
+      learned "urban implies grid" will produce a grid here and the sensitivity sweep will catch it.
+    expected:
+      road_density: low
+      sinuosity: high
+      dead_end_ratio: high
+
+  izu_coast:
+    archetype: coastal_constrained
+    municipality: 熱海市 / 伊東市
+    bbox: [139.05, 34.90, 139.15, 35.00]
+    note: >
+      Terrain meeting sea. Development compressed into a narrow coastal strip and up steep slopes
+      behind it. Tests a different terrain response from the valley: not "follow the corridor" but
+      "fill the only available land". A model that has learned one but not the other has learned a
+      rule rather than a relationship.
+    expected:
+      orientation: strongly anisotropic
+      density_vs_slope: high density despite high slope
+
+# Default split assignment. Kawanehon is held out because it is the archetype that most
+# distinguishes the project, and testing on the easy case would prove nothing.
+default_split:
+  hamamatsu_plain: train
+  izu_coast: val
+  kawanehon_valley: test
