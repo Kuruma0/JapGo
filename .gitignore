@@ -1,0 +1,21 @@
+# Environments
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# Downloaded source data. Never committed: it is large, and the provenance registry plus a
+# manifest is the reproducible record of what was fetched — not the bytes themselves.
+data/raw/
+data/interim/
+data/tiles/
+*.las
+*.laz
+*.tif
+*.zarr/
+
+# Model artifacts
+checkpoints/
+runs/
+*.pt
+*.onnx

@@ -1,0 +1,443 @@
+# JapGo dataset provenance registry
+#
+# Every external dataset or media source used anywhere in this project MUST have an entry here
+# BEFORE any of its bytes reach a training set, cache, or export.
+#
+# See docs/data-provenance.md for field semantics and the rules enforced against this file.
+# See docs/phase0-research.md §6 for the licensing analysis behind the usage_tier values.
+
+registry_version: 2
+last_reviewed: 2026-08-10
+reviewed_by: project owner       # four Phase 0 decisions received 2026-08-10; see research doc
+
+# Project-wide policy set by those decisions:
+#   commercial_intent: true      -> NO research-only or non-commercial source may be ingested,
+#                                   at any tier, for any purpose, including experiments.
+#   gsi_bulk_use: avoided        -> GSI sources are quarantined, not merely gated.
+#   primary_mode: reconstruction -> output geometry must come from the redistributable core
+#                                   (plateau, nlni_*, virtual_shizuoka, aw3d30) so that exports
+#                                   are attribution-only. OSM is a TRAINING input, not shipped
+#                                   geometry. See research doc §6.1c.
+#   modes_supported: [reconstruction, generation]
+#                                -> BOTH ship eventually; long-term commercial emphasis is on
+#                                   generation. This does NOT relax the output_role rules: the
+#                                   reconstruction path is kept attribution-only so it stays
+#                                   shippable without a redesign. See research doc §6.1c.
+#   generation_caveat            -> the "predictions are unencumbered" position (§6.1) assumes
+#                                   output is genuinely novel. A memorising generator thins that
+#                                   argument. Enforced by the novelty metric, not by this file.
+#                                   See research doc §6.1d.
+
+sources:
+
+  # ---------------------------------------------------------------------------------------------
+  # Tier 1 — backbone sources
+  # ---------------------------------------------------------------------------------------------
+
+  - id: osm
+    name: OpenStreetMap
+    source: OpenStreetMap contributors / OpenStreetMap Foundation
+    url: https://www.openstreetmap.org
+    license: ODbL-1.0
+    license_url: https://opendatacommons.org/licenses/odbl/1-0/
+    share_alike: odbl
+    geographic_coverage: Global (Japan coverage good, improving)
+    resolution: Vector, variable detail
+    modalities: [roads, buildings, water, rail, landuse, poi, boundaries]
+    allowed_uses: [research, commercial, ml_training, derivative_works, redistribution]
+    commercial_restrictions: none
+    attribution_required: true
+    attribution_string: "© OpenStreetMap contributors, ODbL 1.0"
+    derivative_restrictions: >
+      Derivative Databases that are Publicly Used must be released under ODbL.
+    training_restrictions: >
+      Per OSMF community guidance: a substantial extraction used as a training set IS a Derivative
+      Database and must be offered under ODbL if publicly used. Models trained on it must attribute
+      OSM in documentation (README / model card). Predictions made by such a model are NOT
+      implicated by ODbL.
+    redistribution_restrictions: ODbL terms apply to the database, not to model predictions.
+    usage_tier: public
+    layer_isolation: required     # keep separate from non-OSM attrs to preserve Collective DB status
+    output_role: training_only    # <-- MUST NOT appear in redistributed reconstruction geometry
+    notes: >
+      Load-bearing source, but confined to training/evaluation/gap-filling as of registry v2.
+      Predictions from an OSM-trained model are unencumbered (OSMF guidance), but a RECONSTRUCTION
+      of a real place transformed from OSM geometry is a Derivative Database and carries ODbL
+      share-alike — which conflicts with the project's commercial intent. See research doc §6.1c.
+      The Collective-vs-Derivative distinction is also why the tile schema keeps source_id on every
+      vector feature instead of flattening attributes.
+
+  - id: plateau
+    name: Project PLATEAU 3D City Models
+    source: Ministry of Land, Infrastructure, Transport and Tourism (MLIT), Japan
+    url: https://www.mlit.go.jp/plateau/
+    distribution_url: https://front.geospatial.jp/
+    license: PDL-1.0
+    license_url: https://www.mlit.go.jp/plateau/site-policy/
+    license_compatibility: [CC-BY-4.0, ODC-BY, ODbL]   # site policy states CC BY 4.0 compatibility
+    share_alike: none
+    geographic_coverage: >
+      ~250 Japanese municipalities nationally. Shizuoka coverage confirmed 2026-08-10 as
+      exceptional: 22 cities + 12 towns, most with both FY2022 and FY2023 vintages, including
+      Kawanehon (mountain valley), Atami/Ito/Shimoda/Izu towns (coastal), and
+      Hamamatsu/Iwata/Fukuroi (suburban plain). The national caveat that rural/mountain coverage is
+      thin does NOT bind in this prefecture — see docs/site-selection.md.
+    resolution: CityGML LOD1/LOD2 (some LOD3), i-UR ADE
+    modalities: [buildings, building_usage, building_year, building_height, roads, landuse, terrain]
+    allowed_uses: [research, commercial, ml_training, derivative_works, redistribution]
+    commercial_restrictions: none      # PDL 1.0 states no commercial-use restriction
+    attribution_required: true
+    attribution_string: "出典: 国土交通省 Project PLATEAU (PDL 1.0)"
+    derivative_restrictions: >
+      Modified content must be marked as modified and must not be presented as MLIT's own work.
+    training_restrictions: none stated
+    redistribution_restrictions: none beyond attribution
+    usage_tier: public
+    output_role: redistributable_core   # PRIMARY output geometry source — see research doc §6.1c
+    layer_isolation: recommended
+    notes: >
+      Highest-value source in the project, and as of registry v2 also the PRIMARY source of shipped
+      reconstruction geometry: it carries roads, buildings and land use under attribution-only terms,
+      which is what lets reconstruction output avoid ODbL share-alike. PLATEAU coverage is therefore
+      a HARD CONSTRAINT on MVP site selection, not a convenience.
+      Building usage → §9 type labels; construction year →
+      §16 development-age research; LOD1/2 geometry → height and roof form. Site policy notes some
+      content carries restrictions under individual statutes (notably surveying law) — verify
+      per-city packages that bundle GSI-derived terrain, which may inherit the gsi_dem constraints.
+
+  - id: virtual_shizuoka
+    name: VIRTUAL SHIZUOKA 3D point cloud / DEM (Shizuoka Prefecture)
+    source: Shizuoka Prefecture, via G-Spatial Information Center (G空間情報センター)
+    url: https://www.geospatial.jp/ckan/dataset/shizuoka-2019-pointcloud
+    related_urls:
+      - https://www.geospatial.jp/ckan/dataset/virtual-shizuoka-mw       # central/west
+      - https://front.geospatial.jp/data/2025/10/6726/                   # northwest
+      - https://www.pref.shizuoka.jp/machizukuri/1049255/1052183.html    # programme overview
+    license: CC-BY-4.0                # dual-licensed CC BY 4.0 / ODbL — WE ELECT CC BY 4.0
+    license_note: >
+      Published under a CC BY 4.0 / ODbL dual license. The project ELECTS CC BY 4.0 and declines
+      ODbL, which keeps terrain entirely outside the share-alike analysis. This election must be
+      recorded in every export manifest that includes this source.
+    share_alike: none               # because of the CC BY 4.0 election above
+    geographic_coverage: >
+      Shizuoka Prefecture — SE Fuji + E Izu, central/west, northwest, Fuji + E Shizuoka.
+      Effectively prefecture-wide.
+    resolution: >
+      0.5 m grid elevation; point density up to ~16 pts/m2 (lower in places); 1 m contour interval.
+      Derived from aerial LiDAR (LP) + mobile mapping (MMS).
+    crs: JGD2011 / Japan Plane Rectangular CS Zone 8
+    format: LAS (ZIP/7z), gridded DEM, orthorectified imagery, vector contours/water
+    modalities:
+      - elevation                # 0.5 m grid
+      - point_cloud              # original AND ground-filtered (bare earth)
+      - aerial_rgb               # orthorectified imagery
+      - contours                 # 1 m interval
+      - water_polygons
+    allowed_uses: [research, commercial, ml_training, derivative_works, redistribution]
+    commercial_restrictions: none
+    attribution_required: true
+    attribution_string: "出典: 静岡県 VIRTUAL SHIZUOKA (CC BY 4.0)"
+    derivative_restrictions: none beyond attribution
+    training_restrictions: none
+    redistribution_restrictions: none beyond attribution
+    usage_tier: public
+    output_role: redistributable_core
+    layer_isolation: not_required
+    operational_notes: >
+      Files average ~300 MB; largest is 5.2 GB. Phase 1 needs streaming/tiled point-cloud handling
+      (PDAL), not whole-file reads. Terrain is downsampled to a 1 m working tier for modelling
+      (research doc §8) so the model does not learn to depend on 0.5 m detail unavailable elsewhere;
+      the raw resolution is retained for validation and high-detail export.
+    notes: >
+      Replaces gsi_dem as the MVP terrain source at 10x better resolution with clean commercial
+      licensing. Its existence is the reason the MVP region is Shizuoka.
+      Confirmed 2026-08-10 (Phase 1): the dataset ALSO ships orthorectified imagery, ground-filtered
+      (bare-earth) point clouds, 1 m contours and water polygons. This closes risk R1d — high-
+      resolution aerial imagery after the GSI exclusion — under the same licence, CRS and tiling as
+      the terrain. Bare-earth returns matter: DSM-vs-DTM confusion would corrupt every slope and
+      grade measure downstream.
+
+  - id: aw3d30
+    name: ALOS World 3D 30m (AW3D30) — VERSION 3.1 for Japan
+    source: JAXA Earth Observation Research Center
+    url: https://www.eorc.jaxa.jp/ALOS/en/dataset/aw3d30/
+    license: CC-BY-4.0
+    share_alike: none
+    geographic_coverage: Global. **Japan is covered by v3.1 only.**
+    version_pin: "3.1"
+    resolution: 30 m DSM
+    modalities: [elevation]
+    allowed_uses: [research, commercial, ml_training, derivative_works, redistribution]
+    commercial_restrictions: none      # closed vocabulary: none | <description> | unresolved
+    commercial_note: JAXA states free of charge for both commercial and non-commercial purposes.
+    attribution_required: true
+    attribution_string: "© JAXA ALOS World 3D-30m (AW3D30) v3.1, CC BY 4.0"
+    training_restrictions: none
+    usage_tier: public
+    output_role: redistributable_core
+    layer_isolation: not_required
+    warning: >
+      VERSION TRAP: AW3D30 v4.1 (April 2024) covers "global except Japan area and Antarctica".
+      Japanese coverage remains at v3.1. A pipeline that fetches "latest" will retrieve NO DATA
+      over Japan. The version is pinned in this registry and must be asserted at ingest time.
+    notes: National-scale terrain fallback outside Shizuoka. DSM, not bare earth.
+
+  - id: copernicus_glo30
+    name: Copernicus DEM GLO-30
+    source: ESA / Copernicus (DLR, Airbus DS)
+    url: https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM
+    license: Copernicus DEM free licence (attribution)
+    share_alike: none
+    geographic_coverage: Global land, EXCEPT a small withheld set of countries
+    resolution: 30 m
+    modalities: [elevation]
+    allowed_uses: [research, commercial, ml_training, derivative_works]
+    commercial_restrictions: none
+    attribution_required: true
+    attribution_string: >
+      © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS
+      by the European Union and ESA; all rights reserved
+    usage_tier: public
+    output_role: redistributable_core
+    layer_isolation: not_required
+    unverified: >
+      Japan coverage NOT CONFIRMED. A small subset of country tiles is withheld from the free public
+      release and the exclusion list was not verified during Phase 0. Redundant given aw3d30 covers
+      Japan under CC BY 4.0 — verify only if this is ever actually needed.
+
+  - id: gsi_dem
+    name: GSI 基盤地図情報 数値標高モデル (DEM5A / DEM10B)
+    source: Geospatial Information Authority of Japan (GSI)
+    url: https://service.gsi.go.jp/kiban/
+    license: PDL-1.0 + Survey Act (測量法) approval regime
+    license_url: https://www.gsi.go.jp/ENGLISH/page_e30286.html
+    share_alike: none
+    geographic_coverage: Japan. 5 m ~70% (urban/coastal-weighted); 10 m nationwide.
+    resolution: 5 m / 10 m
+    modalities: [elevation]
+    allowed_uses: [research]
+    commercial_restrictions: unresolved — see below
+    attribution_required: true
+    attribution_string: "出典: 国土地理院"
+    derivative_restrictions: >
+      Classified as 基本測量成果 (basic survey results). Reproduction/use formally requires
+      approval (複製承認 / 使用承認) from the originating survey organisation. Rules have been
+      relaxed such that reproduction of survey results provided via the GSI website — including
+      GSI tiles — is now approvable even as a dead copy. Download requires user registration.
+    training_restrictions: >
+      UNRESOLVED. Bulk ingestion into a training corpus is a different act from real-time tile
+      display and is not covered by the attribution-only path.
+    redistribution_restrictions: Requires approval.
+    usage_tier: quarantined         # OWNER DECISION 2026-08-10: avoid bulk GSI use entirely
+    layer_isolation: required
+    decision: >
+      Owner elected to avoid bulk GSI use rather than pursue 複製承認. Set to `quarantined` rather
+      than `internal-research-only` deliberately: a research tier would let GSI data into
+      development caches, where it reliably becomes load-bearing before anyone notices.
+      Superseded for the MVP by `virtual_shizuoka` at 0.5 m — better resolution AND cleaner terms.
+    reinstatement_conditions: >
+      May be reconsidered ONLY as an optional future component, and only after the appropriate
+      複製承認 / 使用承認 permissions are obtained and recorded here.
+
+  - id: gsi_tiles
+    name: GSI tiles (地理院タイル) incl. seamless aerial photo mosaic
+    source: Geospatial Information Authority of Japan (GSI)
+    url: https://maps.gsi.go.jp/development/ichiran.html
+    endpoint: https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg
+    license: PDL-1.0 + Survey Act approval regime (same analysis as gsi_dem)
+    share_alike: none
+    geographic_coverage: Japan
+    resolution: XYZ tiles; aerial photo ~0.2–0.5 m effective at high zoom
+    modalities: [aerial_rgb, elevation_tiles]
+    allowed_uses: [research]
+    commercial_restrictions: unresolved
+    attribution_required: true
+    attribution_string: "地理院タイル (国土地理院)"
+    derivative_restrictions: Same 複製承認 regime as gsi_dem.
+    training_restrictions: >
+      Real-time tile use in an application requires attribution only, no prior application.
+      Bulk download/caching into a corpus falls under the reproduction regime.
+    redistribution_restrictions: Requires approval.
+    usage_tier: quarantined         # OWNER DECISION 2026-08-10: avoid bulk GSI use entirely
+    layer_isolation: required
+    decision: Same as gsi_dem.
+    consequence: >
+      This is the one real loss from avoiding GSI: high-resolution open aerial imagery for Japan has
+      no confirmed replacement (risk R1d). Phase 1 must survey prefectural/municipal orthophotos on
+      G-Spatial Information Center for the chosen Shizuoka municipalities. Sentinel-2 at 10 m cannot
+      substitute for building morphology. The MVP is survivable without high-resolution RGB.
+
+  - id: nlni_landuse
+    name: 国土数値情報 土地利用細分メッシュ (L03-b) and related NLNI products
+    source: MLIT National Land Numerical Information
+    url: https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-L03-b.html
+    license: Government of Japan standard terms (CC-BY-4.0 compatible) — VERIFY PER VINTAGE
+    share_alike: none
+    geographic_coverage: Japan
+    resolution: Mesh (3rd mesh ~1 km, fine mesh ~100 m)
+    vintage: Spec v3.1, FY2021 data
+    modalities: [landuse, admin_boundaries, rail, stations, facilities, hazard_zones]
+    allowed_uses: [research, commercial, ml_training, derivative_works]
+    commercial_restrictions: none      # for the pinned vintage; re-verify on version change
+    attribution_required: true
+    attribution_string: "出典: 国土数値情報 (国土交通省)"
+    derivative_restrictions: none beyond attribution
+    training_restrictions: none stated
+    redistribution_restrictions: none stated
+    usage_tier: public
+    output_role: redistributable_core
+    layer_isolation: recommended
+    notes: >
+      The download site explicitly warns that license conditions differ between versions. Terms are
+      recorded per product per vintage, never per site. Any product whose vintage terms cannot be
+      confirmed is set to quarantined.
+
+  - id: estat_mesh_population
+    name: e-Stat census mesh population
+    source: Statistics Bureau of Japan / e-Stat
+    url: https://www.e-stat.go.jp/
+    license: Government of Japan standard terms of use
+    share_alike: none
+    geographic_coverage: Japan
+    resolution: Standard grid mesh (250 m / 500 m / 1 km)
+    modalities: [population, households]
+    allowed_uses: [research, commercial, ml_training, derivative_works]
+    commercial_restrictions: none
+    attribution_required: true
+    attribution_string: "出典: 政府統計の総合窓口 (e-Stat)"
+    training_restrictions: none stated
+    usage_tier: public
+    output_role: redistributable_core
+    layer_isolation: recommended
+
+  # ---------------------------------------------------------------------------------------------
+  # Tier 2 — useful with caveats
+  # ---------------------------------------------------------------------------------------------
+
+  - id: overture
+    name: Overture Maps Foundation — Buildings & Transportation themes
+    source: Overture Maps Foundation
+    url: https://docs.overturemaps.org/attribution/
+    license: ODbL-1.0                 # Places & Divisions themes are CDLA-Permissive-2.0
+    share_alike: odbl
+    geographic_coverage: Global
+    resolution: Vector (GeoParquet)
+    modalities: [buildings, transportation]
+    allowed_uses: [research, commercial, ml_training, derivative_works, redistribution]
+    commercial_restrictions: none      # ODbL permits commercial use; the constraint is share-alike
+    attribution_required: true
+    attribution_string: "© Overture Maps Foundation; © OpenStreetMap contributors, ODbL 1.0"
+    training_restrictions: Same ODbL analysis as `osm`.
+    usage_tier: public
+    output_role: training_only     # same restriction as osm
+    layer_isolation: required
+    notes: >
+      Buildings and Transportation are ODbL because they contain OSM. Adopting Overture buys
+      cloud-native ergonomics, not license relief. Treat as OSM for all compliance purposes,
+      including exclusion from redistributed reconstruction geometry.
+
+  - id: sentinel2
+    name: Copernicus Sentinel-2
+    source: European Space Agency / Copernicus
+    url: https://dataspace.copernicus.eu/
+    license: Copernicus open licence
+    share_alike: none
+    geographic_coverage: Global
+    resolution: 10 m (visible/NIR)
+    modalities: [multispectral_imagery]
+    allowed_uses: [research, commercial, ml_training, derivative_works, redistribution]
+    commercial_restrictions: none
+    attribution_required: true
+    attribution_string: "Contains modified Copernicus Sentinel data [year]"
+    usage_tier: public
+    output_role: redistributable_core
+    layer_isolation: not_required
+    notes: >
+      Too coarse for building morphology. Regional-scale context bands only (built-up index,
+      vegetation). Included mainly as an unencumbered fallback if GSI imagery stays gated.
+
+  # ---------------------------------------------------------------------------------------------
+  # Excluded — recorded so the exclusion is auditable rather than forgotten
+  # ---------------------------------------------------------------------------------------------
+
+  - id: mapillary
+    name: Mapillary street-level imagery
+    source: Mapillary (Meta)
+    url: https://www.mapillary.com/
+    license: CC-BY-SA-4.0 (imagery) + platform Terms of Use
+    share_alike: cc-by-sa            # INCOMPATIBLE with odbl in a single derivative database
+    geographic_coverage: Global, dense in urban Japan
+    modalities: [street_imagery]
+    allowed_uses: [research]
+    commercial_restrictions: ambiguous
+    attribution_required: true
+    training_restrictions: >
+      AMBIGUOUS. Imagery is CC BY-SA 4.0, but the platform Terms of Use layer additional conditions
+      on API access and bulk use. The interaction between the two has been publicly disputed and
+      cannot be resolved from documentation alone.
+    usage_tier: quarantined
+    layer_isolation: required
+    notes: >
+      Excluded from MVP on two independent grounds: (1) unresolved ToS/CC-BY-SA interaction;
+      (2) CC BY-SA share-alike is incompatible with ODbL share-alike in one derivative database.
+      Revisit no earlier than Phase 9. Prefer kartaview if street imagery returns.
+
+  - id: kartaview
+    name: KartaView (formerly OpenStreetCam)
+    source: KartaView community / Grab
+    url: https://kartaview.org/
+    license: CC-BY-SA-4.0
+    share_alike: cc-by-sa
+    geographic_coverage: Global, sparser than Mapillary in Japan
+    modalities: [street_imagery]
+    allowed_uses: [research, commercial]
+    attribution_required: true
+    training_restrictions: >
+      CC BY-SA share-alike. Still incompatible with ODbL in a single derivative database, but the
+      licensing story is simpler than Mapillary's — no conflicting platform ToS layer.
+    usage_tier: quarantined
+    layer_isolation: required
+    notes: Preferred over mapillary if and when street-level imagery is reconsidered (Phase 9).
+
+  - id: meijo_gnss_imu
+    name: Meijo University GNSS/IMU open dataset (Odaiba, Tokyo)
+    source: Meijo University Meguro Lab
+    url: https://github.com/MeijoMeguroLab/Open_data
+    license: Custom research-use license
+    share_alike: none
+    geographic_coverage: Odaiba, Tokyo (2019, 2020, 2022)
+    modalities: [gnss, imu, driving_trajectory]
+    allowed_uses: [research]
+    commercial_restrictions: >
+      Usable for R&D by non-profit AND for-profit organisations, but users may NOT copy or modify
+      the dataset for use in a commercial product.
+    training_restrictions: Effectively non-commercial for any shipped artifact.
+    usage_tier: quarantined
+    layer_isolation: required
+    notes: >
+      Recorded as a representative example of the research-use-only restriction pattern that is
+      common across academic driving datasets. This restriction shape — not this specific dataset —
+      is the reason Phase 9 sources need individual review.
+
+# -------------------------------------------------------------------------------------------------
+# Sources deliberately NOT yet entered (no entry == may not be used):
+#   Wikimedia Commons photography, Mapillary Vistas, SpaceNet, City-Scale / Global-Scale road
+#   datasets, samroadplus model weights, prefectural orthophotos (to be surveyed in Phase 1).
+# Each needs its own entry before use. samroadplus in particular needs its repo license confirmed
+# before any redistribution of weights or derived checkpoints — and now, given commercial intent,
+# before any use at all.
+# -------------------------------------------------------------------------------------------------
+#
+# output_role vocabulary (added in v2):
+#   redistributable_core  - may appear in shipped output; attribution-only terms
+#   training_only         - may be used to train/evaluate, MUST NOT appear in shipped geometry
+#   (absent)              - not applicable (quarantined sources)
+#
+# Phase 1 must implement, in addition to the checks in docs/data-provenance.md:
+#   6. output_role gating - an export marked redistribution_class=attribution-only fails if any
+#      contributing source has output_role: training_only.
+#   7. non-commercial exclusion - ingest fails for any source whose commercial_restrictions is
+#      anything other than `none`, since commercial_intent is true project-wide.
+#   8. version pinning - ingest asserts the pinned version for sources with a version_pin
+#      (currently aw3d30, where "latest" yields no data over Japan).
+# -------------------------------------------------------------------------------------------------
