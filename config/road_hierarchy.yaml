@@ -1,0 +1,140 @@
+# Road classification and the level-of-detail ladder.
+#
+# LOD is a property of the graph, not of the export (research doc §11). One model produces all
+# levels, and a level is materialised by filtering on road_class — which is what guarantees the
+# levels are mutually consistent instead of five separately-generated networks that disagree.
+#
+# `rank` orders the hierarchy from most to least significant. `min_lod` is the first detail level
+# at which a class appears.
+
+hierarchy_version: 1
+
+classes:
+  expressway:
+    rank: 0
+    min_lod: 0
+    typical_lanes: 4
+    typical_width_m: 18.0
+    max_grade_percent: 5.0
+    note: 高速道路. Grade-separated, access-controlled.
+
+  trunk:
+    rank: 1
+    min_lod: 0
+    typical_lanes: 4
+    typical_width_m: 14.0
+    max_grade_percent: 6.0
+    note: Major national route (国道) carrying through traffic.
+
+  primary:
+    rank: 2
+    min_lod: 1
+    typical_lanes: 2
+    typical_width_m: 11.0
+    max_grade_percent: 8.0
+    note: Arterial. National or major prefectural route.
+
+  secondary:
+    rank: 3
+    min_lod: 1
+    typical_lanes: 2
+    typical_width_m: 9.0
+    max_grade_percent: 9.0
+    note: Prefectural route (県道).
+
+  tertiary:
+    rank: 4
+    min_lod: 2
+    typical_lanes: 2
+    typical_width_m: 7.0
+    max_grade_percent: 10.0
+    note: Collector. Distributes between arterials and local streets.
+
+  residential:
+    rank: 5
+    min_lod: 2
+    typical_lanes: 2
+    typical_width_m: 5.5
+    max_grade_percent: 12.0
+    note: Local street fronting dwellings.
+
+  unclassified:
+    rank: 6
+    min_lod: 2
+    typical_lanes: 2
+    typical_width_m: 5.0
+    max_grade_percent: 12.0
+    note: Minor public road with no through-traffic role.
+
+  living_street:
+    rank: 7
+    min_lod: 3
+    typical_lanes: 1
+    typical_width_m: 4.0
+    max_grade_percent: 12.0
+    note: 生活道路. Pedestrian-priority.
+
+  service:
+    rank: 8
+    min_lod: 3
+    typical_lanes: 1
+    typical_width_m: 3.5
+    max_grade_percent: 15.0
+    note: Access to premises, parking aisles, driveways.
+
+  track:
+    rank: 9
+    min_lod: 4
+    typical_lanes: 1
+    typical_width_m: 3.0
+    max_grade_percent: 20.0
+    note: Agricultural and forestry access. Common around the Kawanehon site.
+
+  path:
+    rank: 10
+    min_lod: 4
+    typical_lanes: 0
+    typical_width_m: 1.5
+    max_grade_percent: 30.0
+    note: Not vehicular. Excluded from road-network metrics by default.
+
+  unknown:
+    rank: 99
+    min_lod: 4
+    typical_lanes: 1
+    typical_width_m: 4.0
+    max_grade_percent: 12.0
+
+# OSM highway=* -> road_class. Training-only: OSM road geometry must never reach shipped output
+# (research doc §6.1c), but OSM is the richest available source of road *labels* for training.
+osm_highway:
+  motorway:        expressway
+  motorway_link:   expressway
+  trunk:           trunk
+  trunk_link:      trunk
+  primary:         primary
+  primary_link:    primary
+  secondary:       secondary
+  secondary_link:  secondary
+  tertiary:        tertiary
+  tertiary_link:   tertiary
+  residential:     residential
+  unclassified:    unclassified
+  living_street:   living_street
+  service:         service
+  track:           track
+  road:            unknown
+  # Non-vehicular. Kept so they can be excluded explicitly rather than by omission.
+  footway:         path
+  path:            path
+  cycleway:        path
+  pedestrian:      path
+  steps:           path
+
+# Levels of detail (spec §23). A level includes every class whose min_lod is at most the level.
+lod_levels:
+  0: Major highways only
+  1: Highways and arterials
+  2: Major and local roads
+  3: Detailed local network
+  4: Very detailed, including tracks and paths

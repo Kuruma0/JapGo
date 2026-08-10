@@ -232,5 +232,66 @@ def tiles_channels() -> None:
         click.echo(f"{i:>3}  {c.name:<32}{c.source or '-':<20}{c.units:<10}{norm}")
 
 
+@main.group()
+def roads() -> None:
+    """Read and measure road networks."""
+
+
+@roads.command("analyse")
+@click.argument("osm_file", type=click.Path(exists=True, path_type=Path))
+@click.option("--zone", "zone_number", type=int, default=8, show_default=True)
+@click.option("--lod", type=int, default=None, help="Filter to a level of detail (0-4).")
+@click.option("--area-km2", type=float, default=1.0, show_default=True)
+def roads_analyse(osm_file: Path, zone_number: int, lod: int | None, area_km2: float) -> None:
+    """Measure a road network from an OSM extract.
+
+    OSM is training-only: this reads for analysis, never for export.
+    """
+    from .core import load_hierarchy
+    from .sources import OsmAdapter
+
+    gate = SourceGate(load_registry())
+    adapter = OsmAdapter(gate, target_crs=zone(zone_number).crs)
+
+    try:
+        result = adapter.read(osm_file, purpose="analysis")
+    except (ProvenanceViolation, LookupError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    graph = result.layers["roads"][0]
+    if lod is not None:
+        graph = graph.at_lod(lod)
+
+    click.secho("source: osm — TRAINING/ANALYSIS ONLY, not for export", fg="yellow")
+    click.echo("")
+    click.echo(f"edges                : {len(graph.edges)}")
+    click.echo(f"nodes                : {len(graph.nodes)}")
+    click.echo(f"total length         : {graph.total_length_m / 1000:.2f} km")
+    click.echo(f"road density         : {graph.road_density_km_per_km2(area_km2):.2f} km/km²")
+    click.echo(f"intersection density : {graph.intersection_density_per_km2(area_km2):.2f} /km²")
+    click.echo(f"dead-end ratio       : {graph.dead_end_ratio:.1%}")
+    click.echo(f"orientation entropy  : {graph.orientation_entropy():.3f}  (0 = grid, 1 = organic)")
+    click.echo(f"components           : {len(graph.connected_components())}")
+
+    click.echo("")
+    click.echo("degree histogram:")
+    for degree, count in sorted(graph.degree_histogram().items()):
+        click.echo(f"  {degree}: {'#' * min(count, 40)} {count}")
+
+    hierarchy = load_hierarchy()
+    click.echo("")
+    click.echo("by class:")
+    by_class: dict[str, float] = {}
+    for edge in graph.edges.values():
+        by_class[edge.road_class] = by_class.get(edge.road_class, 0.0) + edge.length_m
+    for road_class, length in sorted(
+        by_class.items(), key=lambda kv: hierarchy.spec(kv[0]).rank
+    ):
+        click.echo(f"  {road_class:<16}{length / 1000:>8.2f} km")
+
+    for w in result.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
+
+
 if __name__ == "__main__":  # pragma: no cover
     main()
