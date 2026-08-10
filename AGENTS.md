@@ -8,13 +8,21 @@ change them.
 
 **Phase 1 (data pipeline), in progress.** Phase 0 closed with no open questions.
 
-Done: provenance gate (`japgo.provenance`), CRS + tile grid (`japgo.geo`), tile manifest
-(`japgo.core`), CLI, 49 tests. Geospatial stack verified on Windows/py3.13 — GDAL 3.12.4 via
-wheels, no toolchain build needed.
+Done (143 tests):
 
-Next: source adapters (PLATEAU → buildings/roads/landuse; VIRTUAL SHIZUOKA → terrain/ortho;
-NLNI; e-Stat; OSM for training only), then the Phase 2 visualiser. The **Phase 0.5 GPU spike**
-runs in parallel and blocks nothing before Phase 4.
+| Package | Contents |
+| --- | --- |
+| `japgo.provenance` | The gate. 8 policy checks, `SourceGate` as the single enforcement point |
+| `japgo.geo` | CRS, tile grid, `Raster`, terrain derivatives (slope/aspect/roughness/hillshade) |
+| `japgo.core` | Tile manifest, `Building`, `Taxonomy` |
+| `japgo.sources` | Adapter contract, PLATEAU (CityGML), VIRTUAL SHIZUOKA (LAS) |
+| `japgo.pipeline` | Channel spec, rasterisation, `TileAssembler`, Zarr/Parquet store |
+
+Geospatial stack verified on Windows/py3.13 — GDAL 3.12.4 via wheels, no toolchain build.
+
+Next: **NLNI land use** and **e-Stat population** adapters, an **OSM adapter** (training-only —
+it must not reach the shipped-geometry path), then the **Phase 2 visualiser**, which gates all
+modelling work. The **Phase 0.5 GPU spike** runs in parallel and blocks nothing before Phase 4.
 
 Settled parameters: commercial use is in scope, with the long-term emphasis on **generated**
 environments and reconstruction kept legally clean alongside; GSI is avoided; the MVP region is
@@ -99,6 +107,12 @@ Do not skip these. Each exists because the failure it prevents is expensive and 
   as a primary metric. A structurally excellent network that differs from the real one is a success.
 - **Porting to Rust early.** Python + GDAL is correct through Phase 4. Port what profiling proves
   is hot — probably tessellation and seam-merge, not the model.
+- **Adding raster channels casually.** The stack is a memory budget, not just a feature list
+  (§20.2). At 512² float32, each channel is ~1 MB per sample before batching. Every new channel
+  needs a reason, and it needs an entry in `config/raster_stack.yaml` — never hardcoded in the
+  assembler.
+- **Sliding-window neighbourhood ops.** `sliding_window_view` + a `nan*` reduction is O(n·w²) and
+  materialises a view w² times the DEM. Use summed-area tables — see `terrain._box_sum`.
 - **Letting the model depend on 0.5 m terrain.** VIRTUAL SHIZUOKA is far finer than anything
   available for the rest of Japan. Terrain enters the model at a 1 m working tier with augmentation
   that simulates 30 m sources. Keep the raw 0.5 m for validation and high-detail export.
