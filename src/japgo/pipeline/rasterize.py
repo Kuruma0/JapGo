@@ -12,9 +12,10 @@ from collections.abc import Iterable, Sequence
 import numpy as np
 from affine import Affine
 from rasterio import features
-from shapely.geometry import Polygon, mapping
+from shapely.geometry import LineString, Polygon, mapping
 
 from ..core.buildings import Building
+from ..core.roads import RoadGraph
 from ..geo.raster import Raster
 from ..geo.tiling import Bounds
 
@@ -129,6 +130,182 @@ def building_class_mask(
     """
     selected = [b for b in buildings if b.coarse_type == coarse_type]
     return building_mask(selected, bounds, resolution, crs)
+
+
+# ------------------------------------------------------------------------------------------------
+# Roads — the prediction targets
+# ------------------------------------------------------------------------------------------------
+
+
+def _road_shapes(graph: RoadGraph, hierarchy, *, use_width: bool):
+    """Road centrelines buffered to their carriageway width, ordered least-significant first.
+
+    Ordering matters: where an expressway crosses a service road, the burned value should be the
+    expressway's. Painting in dictionary order would make the raster depend on insertion order.
+    """
+    edges = sorted(
+        graph.edges.values(),
+        key=lambda e: -hierarchy.spec(e.road_class).rank,  # highest rank number burned first
+    )
+    for edge in edges:
+        if len(edge.geometry) < 2:
+            continue
+        line = LineString(edge.geometry)
+        if use_width:
+            width = edge.width_m or hierarchy.spec(edge.road_class).typical_width_m
+            geom = line.buffer(max(width, 0.5) / 2.0, cap_style=2)
+        else:
+            geom = line
+        if not geom.is_empty:
+            yield edge, geom
+
+
+def road_mask(
+    graph: RoadGraph,
+    bounds: Bounds,
+    resolution: float,
+    crs,
+    *,
+    use_width: bool = True,
+    hierarchy=None,
+) -> Raster:
+    """Binary road coverage — the primary prediction target.
+
+    Burned at carriageway width rather than as hairlines, so that a 4 m service road and an 18 m
+    expressway are distinguishable in the target itself. A model trained on hairlines learns
+    centrelines and loses road width entirely, which spec §38 lists as a validation metric.
+
+    ``all_touched=True``: a road narrower than one cell must still register. Dropping it would
+    teach the model that minor roads do not exist, which is the opposite of what the dense local
+    networks in Japanese cities require.
+    """
+    from ..core.roads import load_hierarchy
+
+    hierarchy = hierarchy or load_hierarchy()
+    shape = _shape(bounds, resolution)
+    shapes = [(mapping(geom), 1) for _, geom in _road_shapes(graph, hierarchy, use_width=use_width)]
+
+    if not shapes:
+        return Raster(np.zeros(shape, np.float32), bounds, crs)
+
+    burned = features.rasterize(
+        shapes,
+        out_shape=shape,
+        transform=transform_for(bounds, resolution),
+        fill=0,
+        dtype="uint8",
+        all_touched=True,
+    )
+    return Raster(burned.astype(np.float32), bounds, crs)
+
+
+def road_class_raster(
+    graph: RoadGraph,
+    bounds: Bounds,
+    resolution: float,
+    crs,
+    *,
+    hierarchy=None,
+) -> Raster:
+    """Road hierarchy as an ordinal surface: 0 outside roads, higher where more significant.
+
+    Ordinal rather than one-hot because road class genuinely *is* ordered — an expressway
+    outranks an arterial outranks a lane — unlike building type, which is not.
+    """
+    from ..core.roads import load_hierarchy
+
+    hierarchy = hierarchy or load_hierarchy()
+    shape = _shape(bounds, resolution)
+
+    max_rank = max(spec.rank for name, spec in hierarchy.classes.items() if name != "unknown")
+    shapes = []
+    for edge, geom in _road_shapes(graph, hierarchy, use_width=True):
+        rank = hierarchy.spec(edge.road_class).rank
+        if rank > max_rank:
+            continue
+        shapes.append((mapping(geom), float(max_rank - rank + 1)))
+
+    if not shapes:
+        return Raster(np.zeros(shape, np.float32), bounds, crs)
+
+    burned = features.rasterize(
+        shapes,
+        out_shape=shape,
+        transform=transform_for(bounds, resolution),
+        fill=0.0,
+        dtype="float32",
+        all_touched=True,
+        merge_alg=features.MergeAlg.replace,
+    )
+    return Raster(burned.astype(np.float32), bounds, crs)
+
+
+def road_orientation(
+    graph: RoadGraph,
+    bounds: Bounds,
+    resolution: float,
+    crs,
+    *,
+    hierarchy=None,
+) -> tuple[Raster, Raster]:
+    """Road bearing as (sin, cos) fields over the road mask.
+
+    Predicting orientation alongside occupancy measurably improves topology in the road-extraction
+    literature — it is what lets a model keep a road straight through an occlusion instead of
+    breaking it. Bearings are doubled before the sin/cos so that a road and its reverse map to the
+    same value: direction is meaningless here, axis is not.
+    """
+    from ..core.roads import load_hierarchy
+
+    hierarchy = hierarchy or load_hierarchy()
+    shape = _shape(bounds, resolution)
+    transform = transform_for(bounds, resolution)
+
+    sin_shapes, cos_shapes = [], []
+    for edge, geom in _road_shapes(graph, hierarchy, use_width=True):
+        angle = np.radians(2.0 * edge.bearing_deg())
+        sin_shapes.append((mapping(geom), float(np.sin(angle))))
+        cos_shapes.append((mapping(geom), float(np.cos(angle))))
+
+    if not sin_shapes:
+        zeros = np.zeros(shape, np.float32)
+        return Raster(zeros.copy(), bounds, crs), Raster(zeros.copy(), bounds, crs)
+
+    def _burn(shapes):
+        return features.rasterize(
+            shapes,
+            out_shape=shape,
+            transform=transform,
+            fill=0.0,
+            dtype="float32",
+            all_touched=True,
+            merge_alg=features.MergeAlg.replace,
+        ).astype(np.float32)
+
+    return Raster(_burn(sin_shapes), bounds, crs), Raster(_burn(cos_shapes), bounds, crs)
+
+
+def distance_to(mask: Raster, *, max_distance_m: float | None = None) -> Raster:
+    """Euclidean distance in metres from every cell to the nearest set cell of ``mask``.
+
+    Used for distance-to-road, distance-to-water and distance-to-rail. Where the mask is empty the
+    field is uniformly ``max_distance_m`` (or the tile diagonal), which is the honest encoding of
+    "nothing of this kind anywhere near".
+    """
+    from scipy import ndimage
+
+    occupied = mask.data > 0
+    if not occupied.any():
+        far = max_distance_m if max_distance_m is not None else float(
+            np.hypot(mask.bounds.width, mask.bounds.height)
+        )
+        return Raster(np.full(mask.data.shape, far, np.float32), mask.bounds, mask.crs)
+
+    distance = ndimage.distance_transform_edt(~occupied, sampling=mask.resolution)
+    distance = np.asarray(distance, dtype=np.float32)
+    if max_distance_m is not None:
+        distance = np.minimum(distance, max_distance_m)
+    return Raster(distance, mask.bounds, mask.crs)
 
 
 def density(

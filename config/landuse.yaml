@@ -1,0 +1,51 @@
+# Land use classification, from 国土数値情報 土地利用細分メッシュ (L03-b).
+#
+# The source attribute is `L03b_002`, a four-digit 土地利用種別 code.
+#
+# Two levels, for the same reason the building taxonomy has two: `classes` is the semantic
+# vocabulary the rest of the system reasons about, and `channels` is the deliberately smaller set
+# that reaches the model.
+#
+# Twelve one-hot channels would cost ~12 MB per 512x512 sample before batching, against a 16 GB
+# budget (research doc §20.2). Four grouped channels carry nearly all the signal that matters for
+# road structure: is it built, farmed, forested, or wet. Codes outside the four groups fold into
+# an implicit "other" — all four channels zero — which costs nothing and loses little.
+
+landuse_version: 1
+
+# NLNI 土地利用種別 code -> semantic class.
+nlni_codes:
+  "0100": { class: paddy,        jp: 田 }
+  "0200": { class: agriculture,  jp: その他の農用地 }
+  "0500": { class: forest,       jp: 森林 }
+  "0600": { class: wasteland,    jp: 荒地 }
+  "0700": { class: built_up,     jp: 建物用地 }
+  "0901": { class: road,         jp: 道路 }
+  "0902": { class: railway,      jp: 鉄道 }
+  "1000": { class: other,        jp: その他の用地 }
+  "1100": { class: water,        jp: 河川地及び湖沼 }
+  "1400": { class: beach,        jp: 海浜 }
+  "1500": { class: sea,          jp: 海水域 }
+  "1600": { class: golf,         jp: ゴルフ場 }
+
+classes:
+  - paddy
+  - agriculture
+  - forest
+  - wasteland
+  - built_up
+  - road
+  - railway
+  - water
+  - beach
+  - sea
+  - golf
+  - other
+  - unknown
+
+# Semantic class -> raster channel. A class absent here reaches the model only as "other".
+channel_groups:
+  landuse_built:        [built_up, road, railway]
+  landuse_agricultural: [paddy, agriculture]
+  landuse_forest:       [forest]
+  landuse_water:        [water, sea, beach]
