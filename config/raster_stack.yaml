@@ -1,0 +1,100 @@
+# The raster stack: the ordered channel list the model consumes.
+#
+# Declarative on purpose. Adding a channel must be a config change, not surgery on the assembler,
+# and the model's input width must be derivable without reading code.
+#
+# Each channel declares the registry source it derives from. That is what lets the tile assembler
+# compute contributing sources — and therefore redistribution_class and the attribution block —
+# automatically, rather than by a hand-maintained list that will eventually be wrong.
+#
+# Channel discipline is a memory strategy as well as an interpretability one (research doc §20.2):
+# a curated ~12-channel stack at 512x512 float32 is ~12 MB per sample before batching. Adding
+# channels casually is how a 16 GB budget stops closing.
+
+stack_version: 1
+
+# Fill value written where a channel has no data. NaN would poison convolutions; the model reads
+# the companion `_valid` mask channel to distinguish "zero" from "unknown".
+nodata_fill: 0.0
+
+channels:
+  # --- terrain (virtual_shizuoka) -------------------------------------------------------------
+  - name: elevation
+    source: virtual_shizuoka
+    derived_from: elevation
+    units: m
+    normalise: tile_relative      # subtract the tile's own mean; absolute height is not the signal
+    note: >
+      Tile-relative because a model given absolute elevation learns "this is a mountain region"
+      rather than "this is a slope", and that does not transfer to an unseen region.
+
+  - name: slope
+    source: virtual_shizuoka
+    derived_from: elevation
+    units: percent
+    normalise: scale
+    scale: 50.0                   # 50% grade is far beyond any buildable road
+
+  - name: aspect_sin
+    source: virtual_shizuoka
+    derived_from: elevation
+    units: unit
+    normalise: none
+    note: >
+      Aspect is circular: 359 deg and 1 deg are adjacent, but numerically far apart. Split into
+      sin/cos so the network sees the wraparound. Feeding raw degrees is a silent modelling bug.
+
+  - name: aspect_cos
+    source: virtual_shizuoka
+    derived_from: elevation
+    units: unit
+    normalise: none
+
+  - name: roughness
+    source: virtual_shizuoka
+    derived_from: elevation
+    units: m
+    normalise: scale
+    scale: 10.0
+
+  # --- built form (plateau) ------------------------------------------------------------------
+  - name: building_mask
+    source: plateau
+    derived_from: buildings
+    units: binary
+    normalise: none
+
+  - name: building_height
+    source: plateau
+    derived_from: buildings
+    units: m
+    normalise: scale
+    scale: 60.0
+
+  - name: building_coarse_residential
+    source: plateau
+    derived_from: buildings
+    units: binary
+    normalise: none
+
+  - name: building_coarse_commercial
+    source: plateau
+    derived_from: buildings
+    units: binary
+    normalise: none
+
+  - name: building_coarse_industrial
+    source: plateau
+    derived_from: buildings
+    units: binary
+    normalise: none
+
+  # --- validity ------------------------------------------------------------------------------
+  - name: valid
+    source: null                  # computed, not sourced
+    derived_from: null
+    units: binary
+    normalise: none
+    note: >
+      1 where the tile has real observations. Lets the loss ignore voids instead of training the
+      model to reproduce them, and distinguishes a genuine zero from a filled gap.

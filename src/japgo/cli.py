@@ -170,5 +170,67 @@ def tiles_plan(zone_number: int, bbox: tuple[float, ...] | None, limit: int) -> 
         click.echo(f"  {tile.id}  core=({b.minx:.0f},{b.miny:.0f})-({b.maxx:.0f},{b.maxy:.0f})")
 
 
+@tiles.command("inspect")
+@click.argument("tile_id")
+@click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
+def tiles_inspect(tile_id: str, root: Path) -> None:
+    """Show a built tile's channels, provenance and redistribution class."""
+    from .pipeline import channel_summary, read_tile
+
+    gate = SourceGate(load_registry())
+    try:
+        bundle = read_tile(root, tile_id)
+    except FileNotFoundError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(f"tile      : {bundle.tile.id}")
+    click.echo(f"shape     : {bundle.shape}  (channels, rows, cols)")
+    click.echo(f"coverage  : {bundle.coverage:.1%}")
+    click.echo(f"crs       : {bundle.manifest.crs}")
+    click.echo(f"registry  : {bundle.manifest.registry_hash}")
+    click.echo(f"preproc   : v{bundle.manifest.preprocessing_version}")
+    click.echo(f"buildings : {len(bundle.buildings)}")
+
+    klass = bundle.redistribution_class(gate)
+    click.secho(
+        f"redistrib : {klass}",
+        fg="green" if klass == "attribution-only" else "yellow",
+        bold=True,
+    )
+    click.echo("")
+    click.echo("sources:")
+    for record in bundle.manifest.sources:
+        version = f" @{record.version}" if record.version else ""
+        click.echo(f"  {record.source_id}{version}  {', '.join(record.layers)}")
+
+    click.echo("")
+    click.echo(f"{'channel':<32}{'min':>10}{'mean':>10}{'max':>10}")
+    for name, lo, mean, hi in channel_summary(bundle):
+        click.echo(f"{name:<32}{lo:>10.3f}{mean:>10.3f}{hi:>10.3f}")
+
+    click.echo("")
+    click.echo("attribution:")
+    for line in bundle.attribution(gate):
+        click.echo(f"  {line}")
+
+
+@tiles.command("channels")
+def tiles_channels() -> None:
+    """Show the raster stack specification the model consumes."""
+    from .pipeline import load_stack_spec
+
+    spec = load_stack_spec()
+    click.echo(f"stack version : {spec.stack_version}")
+    click.echo(f"depth         : {spec.depth} channels")
+    click.echo(f"sources       : {', '.join(spec.required_sources)}")
+    click.echo("")
+    click.echo(f"{'#':>3}  {'channel':<32}{'source':<20}{'units':<10}norm")
+    for i, c in enumerate(spec.channels):
+        norm = c.normalise.value
+        if c.scale:
+            norm += f" /{c.scale:g}"
+        click.echo(f"{i:>3}  {c.name:<32}{c.source or '-':<20}{c.units:<10}{norm}")
+
+
 if __name__ == "__main__":  # pragma: no cover
     main()

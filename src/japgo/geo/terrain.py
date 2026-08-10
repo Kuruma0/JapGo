@@ -75,6 +75,11 @@ def roughness(dem: Raster, window: int = 3) -> Raster:
 
     A scale-aware measure of how broken the ground is — the signal that separates a valley floor
     from the slope above it more cleanly than slope alone.
+
+    Computed from summed-area tables using ``var = E[x^2] - E[x]^2``, which is O(n) in the number
+    of cells and independent of window size. The obvious ``sliding_window_view`` + ``nanstd``
+    formulation is O(n*w^2) and materialises a view w^2 times the size of the DEM — around 0.5 s
+    per tile at 1512^2, which does not survive contact with a city-scale run.
     """
     if window < 3 or window % 2 == 0:
         raise ValueError("window must be an odd integer >= 3")
@@ -82,11 +87,35 @@ def roughness(dem: Raster, window: int = 3) -> Raster:
     pad = window // 2
     z = np.pad(dem.data.astype(np.float64), pad, mode="edge")
 
-    windows = np.lib.stride_tricks.sliding_window_view(z, (window, window))
-    with np.errstate(invalid="ignore"):
-        values = np.nanstd(windows, axis=(-2, -1))
+    holes = np.isnan(z)
+    values_ = np.where(holes, 0.0, z)
+    weights = (~holes).astype(np.float64)
 
-    return Raster(_restore_nodata(values, dem), dem.bounds, dem.crs)
+    count = _box_sum(weights, window)
+    total = _box_sum(values_, window)
+    total_sq = _box_sum(values_ * values_, window)
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean = total / count
+        variance = total_sq / count - mean * mean
+
+    # Catastrophic cancellation on flat ground can drive the difference slightly negative.
+    variance = np.where(count > 0, np.maximum(variance, 0.0), np.nan)
+
+    return Raster(_restore_nodata(np.sqrt(variance), dem), dem.bounds, dem.crs)
+
+
+def _box_sum(padded: np.ndarray, window: int) -> np.ndarray:
+    """Sum over every ``window x window`` block of a pre-padded array, via a summed-area table."""
+    integral = np.zeros((padded.shape[0] + 1, padded.shape[1] + 1), dtype=np.float64)
+    np.cumsum(np.cumsum(padded, axis=0), axis=1, out=integral[1:, 1:])
+
+    return (
+        integral[window:, window:]
+        - integral[:-window, window:]
+        - integral[window:, :-window]
+        + integral[:-window, :-window]
+    )
 
 
 def hillshade(dem: Raster, *, azimuth: float = 315.0, altitude: float = 45.0) -> Raster:
