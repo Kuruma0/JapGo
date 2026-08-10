@@ -7,5 +7,6 @@ layer is that swapping a source does not ripple downstream.
 
 from .base import ReadResult, SourceAdapter
 from .plateau import PlateauAdapter
+from .virtual_shizuoka import VirtualShizuokaAdapter
 
-__all__ = ["PlateauAdapter", "ReadResult", "SourceAdapter"]
+__all__ = ["PlateauAdapter", "ReadResult", "SourceAdapter", "VirtualShizuokaAdapter"]
