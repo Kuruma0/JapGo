@@ -224,12 +224,26 @@ def tiles_channels() -> None:
     click.echo(f"depth         : {spec.depth} channels")
     click.echo(f"sources       : {', '.join(spec.required_sources)}")
     click.echo("")
+    def _rows(items):
+        for i, c in enumerate(items):
+            norm = c.normalise.value
+            if c.scale:
+                norm += f" /{c.scale:g}"
+            click.echo(f"{i:>3}  {c.name:<32}{c.source or '-':<20}{c.units:<10}{norm}")
+
     click.echo(f"{'#':>3}  {'channel':<32}{'source':<20}{'units':<10}norm")
-    for i, c in enumerate(spec.channels):
-        norm = c.normalise.value
-        if c.scale:
-            norm += f" /{c.scale:g}"
-        click.echo(f"{i:>3}  {c.name:<32}{c.source or '-':<20}{c.units:<10}{norm}")
+    _rows(spec.channels)
+
+    if spec.targets:
+        click.echo("")
+        click.secho(
+            f"targets ({spec.target_depth}) — from {', '.join(spec.target_sources)}", bold=True
+        )
+        click.secho(
+            "  training-only: predictions are unencumbered, but this geometry must not ship",
+            fg="yellow",
+        )
+        _rows(spec.targets)
 
 
 @main.group()

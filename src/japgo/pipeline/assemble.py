@@ -19,6 +19,7 @@ import numpy as np
 
 from ..core.buildings import Building
 from ..core.manifest import SourceRecord, TileManifest
+from ..core.roads import RoadGraph
 from ..geo import terrain as terrain_ops
 from ..geo.raster import Raster
 from ..geo.tiling import Tile
@@ -37,6 +38,12 @@ class TileInputs:
 
     elevation: Raster | None = None
     buildings: list[Building] = field(default_factory=list)
+    landuse: dict[str, Raster] = field(default_factory=dict)
+    """Channel-group name -> coverage raster, as produced by the NLNI adapter."""
+
+    roads: RoadGraph | None = None
+    """The prediction target. OSM-derived and therefore training-only."""
+
     records: list[SourceRecord] = field(default_factory=list)
 
     def add_record(self, record: SourceRecord | None) -> None:
@@ -55,6 +62,10 @@ class TileBundle:
     spec: StackSpec
     manifest: TileManifest
     buildings: list[Building] = field(default_factory=list)
+    roads: RoadGraph | None = None
+    targets: np.ndarray | None = None
+    """``(targets, rows, cols)``, or ``None`` when the tile carries inputs only."""
+
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -64,13 +75,36 @@ class TileBundle:
     def channel(self, name: str) -> np.ndarray:
         return self.stack[self.spec.index_of(name)]
 
+    def target(self, name: str) -> np.ndarray:
+        if self.targets is None:
+            raise ValueError(
+                f"tile {self.tile.id} carries no targets. Pass a road graph in TileInputs to "
+                "build a training pair."
+            )
+        return self.targets[self.spec.target_index_of(name)]
+
+    @property
+    def has_targets(self) -> bool:
+        return self.targets is not None
+
+    @property
+    def is_trainable(self) -> bool:
+        """A tile is trainable only if it has both inputs and targets."""
+        return self.has_targets and self.coverage > 0.0
+
     @property
     def coverage(self) -> float:
         """Fraction of the tile with real observations."""
         return float(self.channel("valid").mean())
 
-    def redistribution_class(self, gate: SourceGate) -> str:
-        return self.manifest.redistribution_class(gate.registry)
+    def redistribution_class(self, gate: SourceGate, *, role=None) -> str:
+        return self.manifest.redistribution_class(gate.registry, role=role)
+
+    def input_redistribution_class(self, gate: SourceGate) -> str:
+        """What may be shipped from this tile's *inputs* — the question that governs export."""
+        from ..core.manifest import SourceRole
+
+        return self.manifest.redistribution_class(gate.registry, role=SourceRole.INPUT)
 
     def attribution(self, gate: SourceGate) -> list[str]:
         return self.manifest.attribution(gate)
@@ -125,6 +159,17 @@ class TileAssembler:
             # tiles the Kawanehon site depends on.
             planes.update(self._empty_building_planes(bounds))
 
+        # --- land use --------------------------------------------------------------------
+        if inputs.landuse:
+            for name, raster in inputs.landuse.items():
+                if name in self.spec.names:
+                    planes[name] = self._align(raster, bounds, crs).data
+
+        # --- targets ---------------------------------------------------------------------
+        targets = None
+        if inputs.roads is not None:
+            targets = self._target_planes(inputs.roads, bounds, crs)
+
         # --- assemble --------------------------------------------------------------------
         stack = self._stack_planes(planes, valid, bounds)
         manifest = self._manifest(tile, inputs, crs)
@@ -138,6 +183,8 @@ class TileAssembler:
             spec=self.spec,
             manifest=manifest,
             buildings=list(inputs.buildings),
+            roads=inputs.roads,
+            targets=targets,
             warnings=warnings,
         )
 
@@ -220,6 +267,34 @@ class TileAssembler:
                     buildings, coarse, bounds, self.resolution, crs
                 ).data
         return planes
+
+    def _target_planes(self, graph: RoadGraph, bounds, crs) -> np.ndarray:
+        """Rasterise the road graph into the target stack."""
+        rows, cols = self._shape(bounds)
+        out = np.zeros((self.spec.target_depth, rows, cols), np.float32)
+
+        mask = rasterize.road_mask(graph, bounds, self.resolution, crs)
+        classes = rasterize.road_class_raster(graph, bounds, self.resolution, crs)
+        sin_r, cos_r = rasterize.road_orientation(graph, bounds, self.resolution, crs)
+
+        planes = {
+            "road_mask": mask.data,
+            "road_class": classes.data,
+            "road_orientation_sin": sin_r.data,
+            "road_orientation_cos": cos_r.data,
+        }
+
+        for i, channel in enumerate(self.spec.targets):
+            plane = planes.get(channel.name)
+            if plane is None:
+                continue
+            out[i] = np.nan_to_num(
+                channel.apply_normalisation(np.asarray(plane, np.float32)),
+                nan=self.spec.nodata_fill,
+                posinf=self.spec.nodata_fill,
+                neginf=self.spec.nodata_fill,
+            )
+        return out
 
     def _empty_building_planes(self, bounds) -> dict[str, np.ndarray]:
         zeros = np.zeros(self._shape(bounds), np.float32)

@@ -6,7 +6,7 @@ here instead.
 """
 
 from .buildings import Building, LabelSource, Taxonomy, load_taxonomy
-from .manifest import SCHEMA_VERSION, SourceRecord, TileManifest
+from .manifest import SCHEMA_VERSION, SourceRecord, SourceRole, TileManifest
 from .roads import (
     Control,
     Edge,
@@ -31,6 +31,7 @@ __all__ = [
     "RoadGraph",
     "RoadHierarchy",
     "SourceRecord",
+    "SourceRole",
     "Structure",
     "Taxonomy",
     "TileManifest",

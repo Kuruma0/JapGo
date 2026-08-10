@@ -21,6 +21,7 @@ from .channels import StackSpec, load_stack_spec
 STACK_FILE = "stack.zarr"
 MANIFEST_FILE = "manifest.json"
 BUILDINGS_FILE = "buildings.parquet"
+TARGETS_FILE = "targets.zarr"
 
 
 def tile_dir(root: Path, tile: Tile | str) -> Path:
@@ -50,6 +51,21 @@ def write_tile(root: Path, bundle: TileBundle) -> Path:
     array.attrs["channels"] = bundle.spec.names
     array.attrs["stack_version"] = bundle.spec.stack_version
     array.attrs["tile_id"] = bundle.tile.id
+
+    if bundle.targets is not None:
+        target_path = out / TARGETS_FILE
+        if target_path.exists():
+            _remove_tree(target_path)
+        target_array = zarr.open_array(
+            store=str(target_path),
+            mode="w",
+            shape=bundle.targets.shape,
+            chunks=bundle.targets.shape,
+            dtype="float32",
+        )
+        target_array[:] = bundle.targets
+        target_array.attrs["channels"] = bundle.spec.target_names
+        target_array.attrs["tile_id"] = bundle.tile.id
 
     bundle.manifest.write(out / MANIFEST_FILE)
 
@@ -88,12 +104,25 @@ def read_tile(root: Path, tile_id: str, *, spec: StackSpec | None = None) -> Til
     if parquet.is_file():
         buildings = _read_buildings(parquet)
 
+    targets = None
+    target_path = out / TARGETS_FILE
+    if target_path.exists():
+        target_array = zarr.open_array(store=str(target_path), mode="r")
+        targets = np.asarray(target_array[:], dtype=np.float32)
+        stored_targets = list(target_array.attrs.get("channels", []))
+        if stored_targets and stored_targets != spec.target_names:
+            raise ValueError(
+                f"{tile_id}: stored targets {stored_targets} do not match the current spec "
+                f"{spec.target_names}. Rebuild the tile rather than reinterpreting it."
+            )
+
     return TileBundle(
         tile=parse_tile_id(tile_id, core_size_m=manifest.core_size_m, halo_m=manifest.halo_m),
         stack=stack,
         spec=spec,
         manifest=manifest,
         buildings=buildings,
+        targets=targets,
     )
 
 

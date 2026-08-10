@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -21,12 +22,26 @@ from ..provenance import OutputRole, Registry, SourceGate
 SCHEMA_VERSION = 1
 
 
+class SourceRole(StrEnum):
+    """Whether a source fed the model's inputs or its targets.
+
+    The distinction is not cosmetic. You train on inputs *and* targets, but a shipped
+    reconstruction derives only from inputs — so a tile whose targets come from OSM is perfectly
+    usable for training while its input stack remains attribution-only. Collapsing the two would
+    either forbid legitimate training or permit an illegitimate export.
+    """
+
+    INPUT = "input"
+    TARGET = "target"
+
+
 class SourceRecord(BaseModel):
     """One source's contribution to a tile."""
 
     model_config = ConfigDict(frozen=True)
 
     source_id: str
+    role: SourceRole = SourceRole.INPUT
     version: str | None = None
     layers: list[str] = Field(default_factory=list)
     retrieved_at: str | None = None
@@ -66,15 +81,25 @@ class TileManifest(BaseModel):
 
     # ---------------------------------------------------------------------------------------
 
-    def redistribution_class(self, registry: Registry) -> str:
+    def source_ids_for(self, role: SourceRole) -> list[str]:
+        return [s.source_id for s in self.sources if s.role is role]
+
+    def redistribution_class(
+        self, registry: Registry, *, role: SourceRole | None = None
+    ) -> str:
         """Classify what may be done with artifacts derived from this tile.
 
         ``attribution-only`` — every contributing source is in the redistributable core.
         ``share-alike``      — at least one training_only (ODbL) source contributed.
 
+        Pass ``role=SourceRole.INPUT`` to ask the question that actually governs shipping: may an
+        artifact derived from the *input* stack be redistributed? A tile with OSM targets answers
+        ``share-alike`` overall and ``attribution-only`` for its inputs, and both are true.
+
         Computed rather than declared, so it cannot drift from what actually went in.
         """
-        for sid in self.source_ids:
+        ids = self.source_ids if role is None else self.source_ids_for(role)
+        for sid in ids:
             src = registry.get(sid)
             if src is None or src.output_role is not OutputRole.REDISTRIBUTABLE_CORE:
                 return "share-alike"

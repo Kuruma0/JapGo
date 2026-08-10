@@ -68,15 +68,41 @@ class StackSpec(BaseModel):
     stack_version: int
     nodata_fill: float = 0.0
     channels: list[Channel] = Field(default_factory=list)
+    targets: list[Channel] = Field(default_factory=list)
 
     @property
     def names(self) -> list[str]:
         return [c.name for c in self.channels]
 
     @property
+    def target_names(self) -> list[str]:
+        return [c.name for c in self.targets]
+
+    @property
     def depth(self) -> int:
         """Model input width. Derivable from config alone, without reading code."""
         return len(self.channels)
+
+    @property
+    def target_depth(self) -> int:
+        return len(self.targets)
+
+    def target_index_of(self, name: str) -> int:
+        try:
+            return self.target_names.index(name)
+        except ValueError as exc:
+            raise KeyError(f"no target {name!r}; have {self.target_names}") from exc
+
+    def target(self, name: str) -> Channel:
+        return self.targets[self.target_index_of(name)]
+
+    @property
+    def target_sources(self) -> list[str]:
+        seen: list[str] = []
+        for c in self.targets:
+            if c.source and c.source not in seen:
+                seen.append(c.source)
+        return seen
 
     def index_of(self, name: str) -> int:
         try:

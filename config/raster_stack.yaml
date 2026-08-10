@@ -89,6 +89,33 @@ channels:
     units: binary
     normalise: none
 
+  # --- land use (nlni_landuse) ---------------------------------------------------------------
+  # Four grouped channels, not twelve one-hots. See config/landuse.yaml for the grouping and the
+  # memory arithmetic behind it.
+  - name: landuse_built
+    source: nlni_landuse
+    derived_from: landuse
+    units: binary
+    normalise: none
+
+  - name: landuse_agricultural
+    source: nlni_landuse
+    derived_from: landuse
+    units: binary
+    normalise: none
+
+  - name: landuse_forest
+    source: nlni_landuse
+    derived_from: landuse
+    units: binary
+    normalise: none
+
+  - name: landuse_water
+    source: nlni_landuse
+    derived_from: landuse
+    units: binary
+    normalise: none
+
   # --- validity ------------------------------------------------------------------------------
   - name: valid
     source: null                  # computed, not sourced
@@ -98,3 +125,37 @@ channels:
     note: >
       1 where the tile has real observations. Lets the loss ignore voids instead of training the
       model to reproduce them, and distinguishes a genuine zero from a filled gap.
+
+# The prediction targets. Kept in this file rather than a separate one so that a sample's inputs
+# and targets share a single version and a single hash — an experiment that cannot say which
+# targets it trained against is not reproducible (§44).
+#
+# Targets derive from OSM, which is `training_only`. That is exactly correct and exactly the point:
+# training on OSM is fine, and the resulting predictions are unencumbered. What must never happen
+# is OSM geometry reaching shipped output, which the export gate enforces separately.
+targets:
+  - name: road_mask
+    source: osm
+    derived_from: roads
+    units: binary
+    normalise: none
+    note: The primary target. Road probability, from which the graph is extracted.
+
+  - name: road_class
+    source: osm
+    derived_from: roads
+    units: ordinal
+    normalise: scale
+    scale: 11.0                   # highest rank+1 in config/road_hierarchy.yaml
+
+  - name: road_orientation_sin
+    source: osm
+    derived_from: roads
+    units: unit
+    normalise: none
+
+  - name: road_orientation_cos
+    source: osm
+    derived_from: roads
+    units: unit
+    normalise: none

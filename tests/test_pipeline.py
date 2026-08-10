@@ -93,7 +93,23 @@ def test_stack_depth_is_derivable_from_config_alone(spec):
 
 
 def test_required_sources_are_derived_from_channel_declarations(spec):
-    assert set(spec.required_sources) == {"virtual_shizuoka", "plateau"}
+    assert set(spec.required_sources) == {"virtual_shizuoka", "plateau", "nlni_landuse"}
+
+
+def test_input_sources_are_all_redistributable_core(spec, registry):
+    """The input stack must stay shippable; only targets may come from training-only sources."""
+    for source_id in spec.required_sources:
+        assert registry.require(source_id).may_ship_geometry, source_id
+
+
+def test_targets_come_from_osm(spec):
+    """Correct and deliberate: training on OSM is fine, shipping its geometry is not."""
+    assert spec.target_sources == ["osm"]
+    assert spec.target_depth == 4
+
+
+def test_road_mask_is_the_primary_target(spec):
+    assert spec.target_names[0] == "road_mask"
 
 
 def test_valid_channel_has_no_source(spec):
@@ -325,6 +341,106 @@ def test_channel_drift_is_detected_on_read(assembler, inputs, tmp_path, spec):
     drifted = spec.model_copy(update={"channels": spec.channels[:-1]})
     with pytest.raises(ValueError, match="do not match the current stack spec"):
         read_tile(tmp_path, TILE.id, spec=drifted)
+
+
+# ---------------------------------------------------------------------------------------------
+# Targets and the input/target provenance split
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def road_graph():
+    from japgo.core import Edge, Node, RoadGraph
+
+    cx, cy = TILE.core.centre
+    g = RoadGraph(crs=SHIZUOKA.crs.to_string())
+    g.add_node(Node(id="a", x=cx - 300, y=cy))
+    g.add_node(Node(id="b", x=cx + 300, y=cy))
+    g.add_edge(
+        Edge(id="e", u="a", v="b", geometry=[(cx - 300, cy), (cx + 300, cy)],
+             road_class="secondary", source_id="osm")
+    )
+    return g
+
+
+@pytest.fixture
+def inputs_with_targets(inputs, road_graph):
+    from japgo.core import SourceRole
+
+    inputs.roads = road_graph
+    inputs.records.append(
+        SourceRecord(source_id="osm", role=SourceRole.TARGET, layers=["roads"])
+    )
+    return inputs
+
+
+def test_tile_without_roads_has_no_targets(assembler, inputs):
+    bundle = assembler.assemble(TILE, inputs)
+    assert not bundle.has_targets
+    assert not bundle.is_trainable
+    with pytest.raises(ValueError, match="carries no targets"):
+        bundle.target("road_mask")
+
+
+def test_tile_with_roads_is_trainable(assembler, inputs_with_targets, spec):
+    bundle = assembler.assemble(TILE, inputs_with_targets)
+    assert bundle.is_trainable
+    assert bundle.targets.shape[0] == spec.target_depth
+    assert bundle.targets.shape[1:] == bundle.stack.shape[1:]
+
+
+def test_road_target_is_populated(assembler, inputs_with_targets):
+    bundle = assembler.assemble(TILE, inputs_with_targets)
+    assert bundle.target("road_mask").sum() > 0
+    assert bundle.target("road_class").max() > 0
+
+
+def test_targets_are_finite(assembler, inputs_with_targets):
+    assert np.isfinite(assembler.assemble(TILE, inputs_with_targets).targets).all()
+
+
+def test_osm_targets_do_not_contaminate_the_input_stack(assembler, inputs_with_targets, gate):
+    """The distinction that lets us train on OSM while keeping the input stack shippable."""
+    bundle = assembler.assemble(TILE, inputs_with_targets)
+    assert bundle.redistribution_class(gate) == "share-alike"          # whole bundle
+    assert bundle.input_redistribution_class(gate) == "attribution-only"  # inputs alone
+
+
+def test_osm_as_an_input_does_contaminate(assembler, inputs, gate):
+    """Role is not a loophole: OSM recorded as an input downgrades the input stack."""
+    inputs.records.append(SourceRecord(source_id="osm", layers=["roads"]))  # role defaults to input
+    bundle = assembler.assemble(TILE, inputs)
+    assert bundle.input_redistribution_class(gate) == "share-alike"
+
+
+def test_targets_roundtrip(assembler, inputs_with_targets, tmp_path):
+    bundle = assembler.assemble(TILE, inputs_with_targets)
+    write_tile(tmp_path, bundle)
+    back = read_tile(tmp_path, TILE.id)
+    assert back.has_targets
+    assert np.array_equal(back.targets, bundle.targets)
+
+
+def test_target_drift_is_detected_on_read(assembler, inputs_with_targets, tmp_path, spec):
+    bundle = assembler.assemble(TILE, inputs_with_targets)
+    write_tile(tmp_path, bundle)
+    drifted = spec.model_copy(update={"targets": spec.targets[:-1]})
+    with pytest.raises(ValueError, match="stored targets .* do not match"):
+        read_tile(tmp_path, TILE.id, spec=drifted)
+
+
+def test_landuse_channels_are_populated(assembler, inputs, dem):
+    from japgo.core import SourceRole
+
+    rows, cols = dem.data.shape
+    built = Raster(np.ones((rows, cols), np.float32), TILE.read, SHIZUOKA.crs)
+    inputs.landuse = {"landuse_built": built}
+    inputs.records.append(
+        SourceRecord(source_id="nlni_landuse", role=SourceRole.INPUT, layers=["landuse"])
+    )
+    bundle = assembler.assemble(TILE, inputs)
+    assert bundle.channel("landuse_built").mean() == pytest.approx(1.0)
+    assert bundle.channel("landuse_forest").sum() == 0.0
 
 
 def test_list_and_index_tiles(assembler, inputs, tmp_path):
