@@ -1,0 +1,112 @@
+# Building type taxonomy (research doc §10).
+#
+# Two levels: a stable `coarse` level and an open `fine` level. Adding a fine type must never
+# require a code change or a retrain of anything upstream of the classifier head.
+#
+# The `plateau_usage` mapping seeds fine types from PLATEAU's building usage codes. It is a SEED,
+# not the authority: each PLATEAU package ships its own codelist XML (55 of them), and the adapter
+# resolves `bldg:usage/@codeSpace` against the shipped file at read time. Any code encountered that
+# is absent here is surfaced loudly rather than silently bucketed into `unknown` — an unmapped code
+# is a taxonomy gap to close, not a data error to swallow.
+
+taxonomy_version: 1
+
+coarse:
+  - residential
+  - commercial
+  - industrial
+  - institutional
+  - transport
+  - agricultural
+  - infrastructure
+  - other
+  - unknown
+
+fine:
+  # --- residential ---------------------------------------------------------------------------
+  detached_house:      { coarse: residential }
+  apartment:           { coarse: residential }
+  shophouse:           { coarse: residential, note: "store combined with dwelling" }
+  mixed_apartment:     { coarse: residential, note: "store combined with multi-family dwelling" }
+  workshop_house:      { coarse: residential, note: "workshop combined with dwelling" }
+
+  # --- commercial ----------------------------------------------------------------------------
+  office:              { coarse: commercial }
+  retail:              { coarse: commercial }
+  accommodation:       { coarse: commercial }
+  commercial_mixed:    { coarse: commercial }
+
+  # --- industrial ----------------------------------------------------------------------------
+  factory:             { coarse: industrial }
+  warehouse:           { coarse: industrial }
+
+  # --- institutional -------------------------------------------------------------------------
+  government:          { coarse: institutional }
+  education_welfare:   { coarse: institutional }
+  defence:             { coarse: institutional }
+
+  # --- other ---------------------------------------------------------------------------------
+  agricultural_facility: { coarse: agricultural }
+  utility:             { coarse: infrastructure }
+  other:               { coarse: other }
+  unknown:             { coarse: unknown }
+
+# PLATEAU 建物用途 code -> fine type.
+#
+# `confidence: high`   verified against PLATEAU documentation / published code tables.
+# `confidence: medium` inferred from the code block's pattern; reconcile against the shipped
+#                      codelist label on first real ingest before relying on it.
+plateau_usage:
+  "401": { fine: office,                jp: 業務施設,           confidence: high }
+  "402": { fine: retail,                jp: 商業施設,           confidence: high }
+  "403": { fine: accommodation,         jp: 宿泊施設,           confidence: medium }
+  "404": { fine: commercial_mixed,      jp: 商業系複合施設,     confidence: medium }
+  "411": { fine: detached_house,        jp: 住宅,               confidence: high }
+  "412": { fine: apartment,             jp: 共同住宅,           confidence: high }
+  "413": { fine: shophouse,             jp: 店舗等併用住宅,     confidence: high }
+  "414": { fine: mixed_apartment,       jp: 店舗等併用共同住宅, confidence: high }
+  "415": { fine: workshop_house,        jp: 作業所併用住宅,     confidence: high }
+  "421": { fine: government,            jp: 官公庁施設,         confidence: high }
+  "422": { fine: education_welfare,     jp: 文教厚生施設,       confidence: high }
+  "431": { fine: warehouse,             jp: 運輸倉庫施設,       confidence: high }
+  "441": { fine: factory,               jp: 工場,               confidence: high }
+  "451": { fine: agricultural_facility, jp: 農林漁業用施設,     confidence: medium }
+  "452": { fine: utility,               jp: 供給処理施設,       confidence: medium }
+  "453": { fine: defence,               jp: 防衛施設,           confidence: medium }
+  "454": { fine: other,                 jp: その他,             confidence: medium }
+  "461": { fine: unknown,               jp: 不明,               confidence: high }
+
+# OSM tag -> fine type. Lower priority than PLATEAU (research doc §10): PLATEAU usage is an
+# authoritative municipal attribute, OSM building tags are crowd-sourced and uneven.
+# Used for gap-filling and for training-set labels outside PLATEAU coverage only.
+osm_building:
+  house:          detached_house
+  detached:       detached_house
+  residential:    detached_house
+  apartments:     apartment
+  terrace:        detached_house
+  office:         office
+  commercial:     retail
+  retail:         retail
+  shop:           retail
+  supermarket:    retail
+  hotel:          accommodation
+  industrial:     factory
+  factory:        factory
+  warehouse:      warehouse
+  school:         education_welfare
+  university:     education_welfare
+  hospital:       education_welfare
+  kindergarten:   education_welfare
+  civic:          government
+  government:     government
+  public:         government
+  train_station:  { fine: other, coarse_override: transport }
+  farm:           agricultural_facility
+  farm_auxiliary: agricultural_facility
+  barn:           agricultural_facility
+  greenhouse:     agricultural_facility
+  # MUST stay quoted: YAML 1.1 resolves bare `yes` to the boolean true, and `building=yes` is the
+  # single most common building tag in OSM. Unquoted, the most frequent case silently mis-keys.
+  "yes":          unknown
+  "no":           unknown

@@ -5,6 +5,15 @@ consume a versioned interchange bundle; if logic would otherwise live in two exp
 here instead.
 """
 
+from .buildings import Building, LabelSource, Taxonomy, load_taxonomy
 from .manifest import SCHEMA_VERSION, SourceRecord, TileManifest
 
-__all__ = ["SCHEMA_VERSION", "SourceRecord", "TileManifest"]
+__all__ = [
+    "SCHEMA_VERSION",
+    "Building",
+    "LabelSource",
+    "SourceRecord",
+    "Taxonomy",
+    "TileManifest",
+    "load_taxonomy",
+]
