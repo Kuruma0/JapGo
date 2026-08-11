@@ -612,6 +612,70 @@ def roads_analyse(osm_file: Path, zone_number: int, lod: int | None, area_km2: f
         click.secho(f"warning: {w}", fg="yellow")
 
 
+@main.command("train")
+@click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
+@click.option("--split", "split_path", type=click.Path(path_type=Path),
+              default="data/tiles/split.json", show_default=True)
+@click.option("--scheme", type=click.Choice(["loso", "configured"]), default="loso",
+              show_default=True,
+              help="loso rotates the held-out site so every fold trains on both flat and steep "
+                   "ground; configured uses the single train/val/test assignment in sites.yaml.")
+@click.option("--epochs", type=int, default=8, show_default=True)
+@click.option("--batch", type=int, default=8, show_default=True)
+@click.option("--crop", type=int, default=512, show_default=True)
+@click.option("--width", type=int, default=32, show_default=True)
+@click.option("--seed", type=int, default=0, show_default=True)
+@click.option("--out", type=click.Path(path_type=Path), default="runs", show_default=True)
+def train(root, split_path, scheme, epochs, batch, crop, width, seed, out):
+    """Phase 4: train the baseline and compare it against the non-learned priors.
+
+    The exit criterion is not that it trains — it is that it beats a prior on a site it has never
+    seen. Every fold reports the model and both priors on the same held-out tiles, each at its own
+    best threshold.
+    """
+    import logging
+
+    from .model.train import RunConfig, folds_for, train_fold
+    from .pipeline.splits import SplitDefinition
+
+    logging.basicConfig(level=logging.INFO, format="  %(message)s", force=True)
+
+    if not Path(split_path).is_file():
+        raise click.ClickException(
+            f"no split at {split_path}. Run `japgo splits build --root {root}` first."
+        )
+    split = SplitDefinition.read(split_path)
+    folds = folds_for(split, scheme=scheme)
+
+    results = []
+    for fold in folds:
+        click.secho(f"\n{fold.describe()}", bold=True)
+        if not fold.train_tiles or not fold.eval_tiles:
+            click.secho("  skipped: a side of this fold is empty", fg="yellow")
+            continue
+        config = RunConfig(
+            root=str(root), fold=fold.name,
+            train_tiles=fold.train_tiles, eval_tiles=fold.eval_tiles,
+            crop=crop, batch=batch, epochs=epochs, width=width, seed=seed,
+        )
+        try:
+            result = train_fold(Path(root), fold, config, out_dir=Path(out))
+        except (ValueError, RuntimeError) as exc:
+            raise click.ClickException(f"{fold.name}: {exc}") from exc
+
+        results.append(result)
+        click.echo(f"  model            {result.model['f1']:.3f} F1  "
+                   f"(P {result.model['precision']:.3f} R {result.model['recall']:.3f})")
+        click.echo(f"  prior: constant  {result.constant['f1']:.3f} F1")
+        click.echo(f"  prior: built     {result.built['f1']:.3f} F1")
+        colour = {"P": "green", "F": "red"}.get(result.verdict()[0], "yellow")
+        click.secho(f"  {result.verdict()}", fg=colour)
+
+    if results:
+        cleared = sum(1 for r in results if r.verdict().startswith("PASS"))
+        click.secho(f"\n{cleared}/{len(results)} fold(s) beat both priors", bold=True)
+
+
 @main.command("study")
 @click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
 @click.option(
