@@ -22,6 +22,7 @@ STACK_FILE = "stack.zarr"
 MANIFEST_FILE = "manifest.json"
 BUILDINGS_FILE = "buildings.parquet"
 TARGETS_FILE = "targets.zarr"
+ROADS_FILE = "roads.json"
 
 
 def tile_dir(root: Path, tile: Tile | str) -> Path:
@@ -72,6 +73,13 @@ def write_tile(root: Path, bundle: TileBundle) -> Path:
     if bundle.buildings:
         _write_buildings(out / BUILDINGS_FILE, bundle.buildings)
 
+    if bundle.roads is not None:
+        # The road graph is a first-class output, not a rasterisation intermediate: the Phase 2
+        # alignment check needs the vectors, and Phase 3's metrics are computed on the graph.
+        (out / ROADS_FILE).write_text(
+            bundle.roads.model_dump_json(indent=2) + "\n", encoding="utf-8"
+        )
+
     return out
 
 
@@ -116,12 +124,20 @@ def read_tile(root: Path, tile_id: str, *, spec: StackSpec | None = None) -> Til
                 f"{spec.target_names}. Rebuild the tile rather than reinterpreting it."
             )
 
+    roads = None
+    roads_path = out / ROADS_FILE
+    if roads_path.is_file():
+        from ..core.roads import RoadGraph
+
+        roads = RoadGraph.model_validate_json(roads_path.read_text(encoding="utf-8"))
+
     return TileBundle(
         tile=parse_tile_id(tile_id, core_size_m=manifest.core_size_m, halo_m=manifest.halo_m),
         stack=stack,
         spec=spec,
         manifest=manifest,
         buildings=buildings,
+        roads=roads,
         targets=targets,
     )
 

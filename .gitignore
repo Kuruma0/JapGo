@@ -19,3 +19,4 @@ checkpoints/
 runs/
 *.pt
 *.onnx
+reports/

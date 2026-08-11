@@ -371,6 +371,69 @@ def splits_show(path: Path) -> None:
 
 
 @main.group()
+def viz() -> None:
+    """Phase 2: visual inspection. No modelling until alignment is confirmed."""
+
+
+@viz.command("tiles")
+@click.argument("tile_ids", nargs=-1)
+@click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
+@click.option("--out", type=click.Path(path_type=Path), default="reports", show_default=True)
+@click.option("--decimate", type=int, default=2, show_default=True, help="Pixel decimation.")
+@click.option("--limit", type=int, default=None, help="Render at most N tiles.")
+def viz_tiles(
+    tile_ids: tuple[str, ...], root: Path, out: Path, decimate: int, limit: int | None
+) -> None:
+    """Render self-contained inspection pages for built tiles.
+
+    With no TILE_IDS, renders every tile in ROOT and writes a contact-sheet index.
+    """
+    from .pipeline import list_tiles, read_tile
+    from .viz import summarise, write_index_page, write_report
+
+    gate = SourceGate(load_registry())
+    names = list(tile_ids) or list_tiles(root)
+    if not names:
+        raise click.ClickException(
+            f"no tiles under {root}. Run `japgo tiles build` first."
+        )
+    if limit is not None:
+        names = names[:limit]
+
+    out.mkdir(parents=True, exist_ok=True)
+    paths, entries = [], []
+
+    for tile_id in names:
+        try:
+            bundle = read_tile(root, tile_id)
+        except (FileNotFoundError, ValueError) as exc:
+            click.secho(f"  {tile_id}: {exc}", fg="red")
+            continue
+
+        path = write_report(bundle, gate, out / f"{tile_id}.html", decimate=decimate)
+        paths.append(path)
+        entries.append(summarise(bundle, gate))
+        click.echo(
+            f"  {tile_id}  coverage {bundle.coverage:>5.1%}  "
+            f"{len(bundle.buildings):>4} buildings  "
+            f"{len(bundle.roads.edges) if bundle.roads else 0:>4} edges  -> {path.name}"
+        )
+
+    if not paths:
+        raise click.ClickException("nothing rendered")
+
+    index = write_index_page(paths, out / "index.html", entries)
+    click.echo("")
+    click.secho(f"{len(paths)} report(s) written", fg="green", bold=True)
+    click.echo(f"open: {index}")
+    click.secho(
+        "\nPhase 2 gate: confirm building outlines sit on their raster masks and roads "
+        "continue across the core boundary before any modelling begins.",
+        fg="yellow",
+    )
+
+
+@main.group()
 def roads() -> None:
     """Read and measure road networks."""
 
