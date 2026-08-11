@@ -166,7 +166,9 @@ def train_fold(root: Path, fold: Fold, config: RunConfig, *, out_dir: Path) -> R
     scores = evaluate_fold(root, fold, model, config, rate=rate, target_index=target_index)
     topology = topology_of(
         root, fold, scores.pop("_rasters"),
-        threshold=scores["model"].threshold, seed=config.seed,
+        threshold=scores["model"].threshold,
+        prior_threshold=scores["built"].threshold,
+        seed=config.seed,
     )
 
     out_dir = Path(out_dir)
@@ -230,12 +232,18 @@ def evaluate_fold(root: Path, fold: Fold, model, config: RunConfig, *, rate: flo
         "model": best_threshold(probability, truth, valid=valid),
         "constant": best_threshold(constant_prior(truth.shape, rate), truth, valid=valid),
         "built": best_threshold(built, truth, valid=valid),
-        "_rasters": (probs, fold.eval_tiles),
+        "_rasters": (probs, priors, fold.eval_tiles),
     }
 
 
-def topology_of(root: Path, fold: Fold, rasters, *, threshold: float, seed: int = 0):
-    """APLS and TOPO per held-out tile, against the tile's own OSM graph.
+def topology_of(
+    root: Path, fold: Fold, rasters, *, threshold: float, prior_threshold: float, seed: int = 0
+):
+    """APLS and TOPO per held-out tile, for the model *and* the built-proximity prior.
+
+    The prior is scored too because the exit criterion says "beats a non-learned prior on
+    APLS/TOPO". Scoring only the model would leave the phase's own question unanswerable — pixel
+    F1 clearing the floor is a different claim entirely.
 
     Run at the model's best pixel threshold rather than a fixed 0.5: extraction is downstream of
     thresholding, and scoring a well-calibrated model and a badly-calibrated one at the same cutoff
@@ -248,28 +256,38 @@ def topology_of(root: Path, fold: Fold, rasters, *, threshold: float, seed: int 
     from .extract import ExtractionSpec, extract_graph
     from .topology import compare
 
-    probs, tile_ids = rasters
-    spec = ExtractionSpec(threshold=threshold)
-    scores = []
+    probs, priors, tile_ids = rasters
+    model_scores, prior_scores = [], []
 
-    for probability, tile_id in zip(probs, tile_ids, strict=True):
+    for probability, prior, tile_id in zip(probs, priors, tile_ids, strict=True):
         bundle = read_tile(root, tile_id)
         if bundle.roads is None or not bundle.roads.edges:
             continue
-        predicted = extract_graph(
-            probability, bundle.tile.read, bundle.manifest.crs,
-            spec=spec, tile_id=tile_id,
-        )
-        scores.append(compare(bundle.roads, predicted, seed=seed))
+        for raster, cutoff, sink in (
+            (probability, threshold, model_scores),
+            (prior, prior_threshold, prior_scores),
+        ):
+            predicted = extract_graph(
+                raster, bundle.tile.read, bundle.manifest.crs,
+                spec=ExtractionSpec(threshold=cutoff), tile_id=tile_id,
+            )
+            sink.append(compare(bundle.roads, predicted, seed=seed))
 
-    if not scores:
+    if not model_scores:
         return None
+
+    def summarise(scores: list) -> dict:
+        return {
+            "apls": float(np.mean([s.apls for s in scores])),
+            "topo_f1": float(np.mean([s.topo_f1 for s in scores])),
+            "topo_precision": float(np.mean([s.topo_precision for s in scores])),
+            "topo_recall": float(np.mean([s.topo_recall for s in scores])),
+            "predicted_nodes": int(np.mean([s.proposal_nodes for s in scores])),
+        }
+
     return {
-        "apls": float(np.mean([s.apls for s in scores])),
-        "topo_f1": float(np.mean([s.topo_f1 for s in scores])),
-        "topo_precision": float(np.mean([s.topo_precision for s in scores])),
-        "topo_recall": float(np.mean([s.topo_recall for s in scores])),
-        "tiles": len(scores),
-        "predicted_nodes": int(np.mean([s.proposal_nodes for s in scores])),
-        "truth_nodes": int(np.mean([s.truth_nodes for s in scores])),
+        **summarise(model_scores),
+        "tiles": len(model_scores),
+        "truth_nodes": int(np.mean([s.truth_nodes for s in model_scores])),
+        "prior": summarise(prior_scores) if prior_scores else None,
     }

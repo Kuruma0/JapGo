@@ -19,12 +19,16 @@ co-author trailers or tool branding. Before pushing, check with
 **Phases 0–4 have results.** **81 tiles** across all three MVP archetypes, built from the published
 sources with nothing staged. Phase 3 reports **44 supported associations and 8 nulls** — steeper
 ground carries less road and fewer intersections; greater relief makes roads wind. Phase 4's dull
-U-Net clears both non-learned floors on **3/3 leave-one-site-out folds**, each evaluated on an
-archetype it never saw.
+U-Net beats the non-learned prior on **APLS and TOPO across 3/3 leave-one-site-out folds**, each
+evaluated on an archetype it never saw — the phase's actual exit criterion, met narrowly.
 
-The control that matters: trained on the flat plain alone it scores F1 0.142 on the mountain valley
-and loses to the built-proximity prior; trained on flat *and* steep it scores 0.335 and wins. The
-model responds to environment, not just to built form.
+Met, and still bad. APLS runs 0.015–0.181 and the extractor produces **4.6–8.6× the real junction
+count**, because a `pos_weight` of up to 31 makes the model over-paint and blobs skeletonise into
+hairballs. Fix the loss before believing any structural number.
+
+The control that matters: trained on the flat plain alone it scores APLS 0.005 on the mountain
+valley and *loses* to the prior; trained on flat *and* steep it scores 0.015 and wins. Same site,
+same seed. The model responds to environment, not just to built form.
 
 Done (386 tests):
 
@@ -52,10 +56,11 @@ the wheel still ships gfx1030 kernels before taking one.
 Session transcripts do not travel between machines. [docs/decision-log.md](docs/decision-log.md)
 records what happened when the reasoning met real data — read it alongside the research document.
 
-Next: **graph extraction and the §16.2 metric suite**. Phase 4's exit criterion names APLS/TOPO,
-and the baseline is so far scored on pixel F1 only — probability to centreline to `RoadGraph` is
-the missing step. Precision is the weak side on every fold (0.10–0.50): the class-weighted loss
-over-paints, and a Dice-style objective or a calibrated threshold is the obvious first fix.
+Next: **fix the over-painting before Phase 5**. A Dice or focal objective in place of heavily
+weighted BCE, and extraction thresholds matched to the real output. The sensitivity sweep measures
+how road *structure* responds to environmental change, and structure means the extracted graph —
+running it through an extractor that invents 5× the junctions would produce numbers nobody could
+interpret.
 
 Before trusting Phase 3's ranking as an attribution, note that the terrain predictors are collinear
 (slope/relief/roughness rank together). Use `--scheme loso`, not the configured single-site split —

@@ -440,6 +440,54 @@ batch, epochs, seed, stack version and registry hash `5cf7ff78cf16f0c3`.
 
 ---
 
+## 2026-08-12 — Phase 4's real exit criterion: met, and the networks are still bad
+
+Adding graph extraction and the §16.2 topology metrics changed the reading of Phase 4 completely.
+Pixel F1 said the baseline was comfortably clear of the floor; APLS says it barely is.
+
+Per held-out archetype, model against the built-proximity prior, each extracted at its own best
+pixel threshold:
+
+| Held out | Pixel F1 | APLS | prior APLS | TOPO F1 | prior TOPO F1 | nodes pred / real |
+| --- | --- | --- | --- | --- | --- | --- |
+| hamamatsu_plain | 0.447 | **0.181** | 0.053 | **0.254** | 0.237 | 3,537 / 741 |
+| izu_coast | 0.524 | **0.044** | 0.009 | **0.343** | 0.160 | 441 / 96 |
+| kawanehon_valley | 0.335 | **0.015** | 0.008 | **0.332** | 0.235 | 378 / 45 |
+
+**The criterion is met**: on all three folds the model beats the non-learned prior on both APLS
+and TOPO, evaluated on an archetype it never saw. It is met narrowly and at a low absolute level,
+and saying so is more useful than the headline.
+
+**Node inflation is the defect, and it is systematic.** The extractor produces 4.6–8.6× the real
+junction count. The chain is not mysterious: `pos_weight` runs to 31 to counter a 3% positive
+class, the model over-paints, blobby probability skeletonises into hairballs, and every
+junction-based measure collapses. Note the prior is *better calibrated* on node count (692 against
+741 real on Hamamatsu) and still loses — it puts its roads in the wrong places, while the model
+puts them roughly right and then adds mass around them.
+
+**APLS degrades as the real network gets sparser** — 741 nodes → 0.181, 96 → 0.044, 45 → 0.015.
+On a sparse mountain network an 8.6× junction excess destroys route structure outright, so almost
+no shortest path in the prediction corresponds to a real one. Kawanehon is the hardest site by
+every measure, exactly as [site-selection.md](site-selection.md) predicted.
+
+**The control fails where the LOSO folds pass.** Trained on the flat plain alone and tested on
+Kawanehon: APLS **0.005 against the prior's 0.008** — it loses. Same held-out site, same
+architecture, same seed; only the training terrain differs. Topology confirms what pixel F1
+suggested, and more sharply: without steep ground in training the model does not merely score
+lower, it fails the criterion.
+
+**A gap I had to close before any of this was answerable.** The first implementation scored
+APLS/TOPO for the model only. The exit criterion is *beats a non-learned prior on APLS/TOPO*, so
+that version could not answer the phase's own question — pixel F1 clearing the floor is a
+different claim. The priors are now scored on the same metrics through the same extraction path.
+
+**Next, and not architectural.** A loss that penalises fragmentation (Dice or focal, rather than
+heavily-weighted BCE) and extraction thresholds matched to the real output. Building a generative
+model on an extractor that invents 5× the junctions would inherit the defect somewhere much harder
+to diagnose.
+
+---
+
 ## Corrections — things believed and then disproved
 
 Recorded because the wrong version is the intuitive one and will otherwise be re-derived.

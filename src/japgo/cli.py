@@ -674,6 +674,16 @@ def train(root, split_path, scheme, epochs, batch, crop, width, seed, out):
                        f"(P {tp['topo_precision']:.3f} R {tp['topo_recall']:.3f})")
             click.echo(f"  nodes            {tp['predicted_nodes']} predicted vs "
                        f"{tp['truth_nodes']} real, per tile")
+            if tp.get("prior"):
+                pp = tp["prior"]
+                click.echo(f"  graph prior      APLS {pp['apls']:.3f}  "
+                           f"TOPO F1 {pp['topo_f1']:.3f}  ({pp['predicted_nodes']} nodes)")
+                won = tp["apls"] > pp["apls"] and tp["topo_f1"] > pp["topo_f1"]
+                click.secho(
+                    "  topology         " + ("beats the prior on APLS and TOPO"
+                                             if won else "DOES NOT beat the prior"),
+                    fg="green" if won else "red",
+                )
         colour = {"P": "green", "F": "red"}.get(result.verdict()[0], "yellow")
         click.secho(f"  {result.verdict()}", fg=colour)
 
