@@ -754,7 +754,9 @@ profiling proves is hot — most likely tessellation and seam-merge, not the mod
 
 ## 20. Hardware requirements
 
-**Confirmed environment: AMD Radeon RX 6800, 16 GB VRAM, Windows 11.** Plan around it; do not assume
+**Confirmed environment: AMD Radeon RX 6800, 16 GB VRAM, Linux.** (Revision 2 recorded Windows 11
+here; the training machine moved to Linux on 2026-08-11 — see the update note below.) Plan around
+it; do not assume
 a larger card appears.
 
 ### 20.1 The real constraint is the software stack, not the VRAM **[FLAG]**
@@ -774,12 +776,14 @@ card (gfx1030) on Windows**, which is the least-supported quadrant of the PyTorc
 This is a schedule risk, not a capability risk, and it is worth confronting immediately rather than
 discovering it in Phase 4.
 
-> **Update 2026-08-11: the training machine runs Linux.** This removes most of the risk described
-> below, which was specific to gfx1030 *on Windows*. gfx1030 appears in ROCm's supported
-> configurations on Ubuntu 22.04/24.04 and RHEL 9.6, with ROCm 7 in production — so the spike is
-> now expected to be a confirmation rather than an investigation, and the Windows timebox and
-> dual-boot fallback below are moot. **R1b drops from Medium to Low.** Run
-> `python scripts/gpu_spike.py` and read the verdict.
+> **Update 2026-08-11: the training machine runs Linux, and the spike has now passed.** The risk
+> described below was specific to gfx1030 *on Windows*; the Windows timebox and the dual-boot
+> fallback are both moot. The stack came up unmodified on `torch 2.9.1+rocm6.4` with fp16 autocast
+> working and **4.03 GB peak at 512² × 15 channels, batch 8** — comfortably inside the budget
+> §20.2 sets out below, and without the gradient checkpointing that estimate assumed. **R1b is
+> closed.** Everything from here to the end of §20.1 is retained as the record of a resolved risk,
+> not as live guidance. Measurements and wheel-selection notes are in
+> [decision-log.md](decision-log.md).
 
 **[DECIDE] Add a Phase 0.5 "GPU spike"** — a half-day, before any modelling work: install a
 candidate stack, train a small U-Net on random tensors, confirm fp16 works and memory reporting is
@@ -838,7 +842,7 @@ reformulation or cloud training, and to weight the benchmark accordingly.
 | # | Risk | Severity | Mitigation |
 | --- | --- | --- | --- |
 | R1 | ~~GSI Survey Act blocks release~~ **Closed.** Owner decision + VIRTUAL SHIZUOKA removed this risk entirely, at a net *gain* in terrain resolution | — | Closed 2026-08-10 |
-| R1b | ROCm/gfx1030 training stack may not come up | ~~High~~ ~~Medium~~ **Low** | Downgraded twice. The training machine runs **Linux**, where gfx1030 is a supported ROCm configuration — the risk was specific to Windows. Confirm with `scripts/gpu_spike.py` |
+| R1b | ~~ROCm/gfx1030 training stack may not come up~~ **Closed 2026-08-11.** Spike passed on torch 2.9.1+rocm6.4: fp16 working, 4.03 GB peak at 512²×15 batch 8 | — | Closed. See [decision-log.md](decision-log.md) |
 | R1f | Generated output memorises and reproduces a specific real place, weakening the "predictions are unencumbered" position (§6.1d) | Medium | Nearest-neighbour novelty check in the §16.2 metric suite; it doubles as a generalisation measure |
 | R1c | Reconstruction output derived from OSM carries ODbL share-alike, conflicting with commercial intent (§6.1c) | High | PLATEAU/NLNI-primary output path; OSM confined to training; `redistribution_class` on every export |
 | R1d | ~~High-resolution aerial imagery has no confirmed open source after GSI exclusion~~ **Closed 2026-08-10.** VIRTUAL SHIZUOKA ships orthorectified imagery *and* bare-earth point clouds under the same licence and CRS | — | See [site-selection.md](site-selection.md) |

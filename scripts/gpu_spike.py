@@ -141,7 +141,11 @@ def run(args) -> Report:
 
         use_amp = report.backend in {"cuda", "rocm"}
         # fp16, not bf16: RDNA2 has no bf16 hardware (research doc invariant 9).
-        scaler = torch.cuda.amp.GradScaler(enabled=use_amp) if use_amp else None
+        #
+        # torch.amp.GradScaler, not torch.cuda.amp.GradScaler: the latter has been deprecated
+        # since torch 2.4 and warns on every run. A go/no-go that reports FAIL because its own
+        # API call was removed would be worse than useless — it would look like a hardware result.
+        scaler = torch.amp.GradScaler("cuda", enabled=use_amp) if use_amp else None
 
         x = torch.randn(args.batch, args.channels, args.crop, args.crop, device=device)
         y = torch.randn(args.batch, 4, args.crop, args.crop, device=device)
