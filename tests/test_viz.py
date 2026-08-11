@@ -7,6 +7,7 @@ but a test catches it in CI, every run, without anyone having to look.
 
 from __future__ import annotations
 
+import math
 import struct
 import zlib
 
@@ -205,6 +206,42 @@ def test_road_target_lies_under_the_road_vector(bundle):
     ys = bounds.maxy - (rows + 0.5) * RES
     _, road_y = bundle.tile.core.centre
     assert abs(ys.mean() - road_y) < 2 * RES
+
+
+def test_road_target_stays_within_the_carriageway_plus_one_cell(bundle):
+    """Burned road cells must lie within half a carriageway of the centreline, plus one
+    half-cell-diagonal.
+
+    The tolerance is not slack, it is arithmetic: ``all_touched=True`` burns any cell the buffered
+    polygon clips at all, so a cell centre can sit up to half a cell diagonal outside the
+    carriageway edge. Measured on the real Atami tile the worst case was 3.44 m against a 2.75 m
+    half-width — i.e. 2.75 + 0.69, matching the bound exactly. Anything beyond it is a genuine
+    misalignment rather than discretisation.
+    """
+    from shapely.geometry import LineString, Point
+
+    bounds = bundle.tile.read
+    target = bundle.target("road_mask") > 0
+    assert target.any()
+
+    from japgo.core import load_hierarchy
+
+    hierarchy = load_hierarchy()
+    lines = [LineString(e.geometry) for e in bundle.roads.edges.values() if len(e.geometry) > 1]
+
+    # Must mirror the rasteriser's own rule, or the test is checking a different road.
+    half_width = max(
+        (e.width_m or hierarchy.spec(e.road_class).typical_width_m)
+        for e in bundle.roads.edges.values()
+    ) / 2.0
+    tolerance = half_width + RES * math.sqrt(2) / 2
+
+    rows, cols = np.nonzero(target)
+    step = max(1, len(rows) // 300)  # sample; the full mask is tens of thousands of cells
+    for row, col in zip(rows[::step], cols[::step], strict=False):
+        x = bounds.minx + (col + 0.5) * RES
+        y = bounds.maxy - (row + 0.5) * RES
+        assert min(line.distance(Point(x, y)) for line in lines) <= tolerance
 
 
 def test_misalignment_would_be_detected(gate, bundle):
