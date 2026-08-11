@@ -19,6 +19,9 @@ dependencies = [
     "pydantic>=2.6",
     "pyproj>=3.6",
     "shapely>=2.0",
+    "networkx>=3.0",   # graph algorithms. Research doc §3 lists it as adopted and puts
+                       # "graph algorithms" on the do-not-reinvent list; APLS and TOPO both
+                       # need shortest paths, and a hand-rolled Dijkstra is exactly that.
 ]
 
 [project.optional-dependencies]
@@ -28,6 +31,10 @@ geo = [
     "zarr>=2.17",
     "laspy[lazrs]>=2.5",
     "pyarrow>=15",
+    "scikit-image>=0.22",  # skeletonisation. Same rule: raster<->vector conversion is on the
+                           # do-not-reinvent list, and thinning is where a hand-rolled version
+                           # goes subtly wrong — a stray 8-connected diagonal becomes a spurious
+                           # junction, and junction count is a headline TOPO term.
     "scipy>=1.11",   # exact Euclidean distance transform; a pure-numpy EDT is O(n) but loops in
                      # Python and costs seconds per tile at 1512^2.
 ]

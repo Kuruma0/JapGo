@@ -668,6 +668,12 @@ def train(root, split_path, scheme, epochs, batch, crop, width, seed, out):
                    f"(P {result.model['precision']:.3f} R {result.model['recall']:.3f})")
         click.echo(f"  prior: constant  {result.constant['f1']:.3f} F1")
         click.echo(f"  prior: built     {result.built['f1']:.3f} F1")
+        if result.topology:
+            tp = result.topology
+            click.echo(f"  graph            APLS {tp['apls']:.3f}  TOPO F1 {tp['topo_f1']:.3f} "
+                       f"(P {tp['topo_precision']:.3f} R {tp['topo_recall']:.3f})")
+            click.echo(f"  nodes            {tp['predicted_nodes']} predicted vs "
+                       f"{tp['truth_nodes']} real, per tile")
         colour = {"P": "green", "F": "red"}.get(result.verdict()[0], "yellow")
         click.secho(f"  {result.verdict()}", fg=colour)
 

@@ -74,6 +74,8 @@ class Result:
     eval_tiles: int
     epochs: int
     seconds: float
+    topology: dict | None = None
+    """APLS/TOPO on the extracted graph. None when no held-out tile carried a road graph."""
 
     def verdict(self) -> str:
         """Whether the model cleared the floor. The Phase 4 exit criterion, in one line."""
@@ -162,6 +164,10 @@ def train_fold(root: Path, fold: Fold, config: RunConfig, *, out_dir: Path) -> R
 
     seconds = time.perf_counter() - started
     scores = evaluate_fold(root, fold, model, config, rate=rate, target_index=target_index)
+    topology = topology_of(
+        root, fold, scores.pop("_rasters"),
+        threshold=scores["model"].threshold, seed=config.seed,
+    )
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -178,6 +184,7 @@ def train_fold(root: Path, fold: Fold, config: RunConfig, *, out_dir: Path) -> R
         eval_tiles=len(fold.eval_tiles),
         epochs=config.epochs,
         seconds=seconds,
+        topology=topology,
     )
 
 
@@ -223,4 +230,46 @@ def evaluate_fold(root: Path, fold: Fold, model, config: RunConfig, *, rate: flo
         "model": best_threshold(probability, truth, valid=valid),
         "constant": best_threshold(constant_prior(truth.shape, rate), truth, valid=valid),
         "built": best_threshold(built, truth, valid=valid),
+        "_rasters": (probs, fold.eval_tiles),
+    }
+
+
+def topology_of(root: Path, fold: Fold, rasters, *, threshold: float, seed: int = 0):
+    """APLS and TOPO per held-out tile, against the tile's own OSM graph.
+
+    Run at the model's best pixel threshold rather than a fixed 0.5: extraction is downstream of
+    thresholding, and scoring a well-calibrated model and a badly-calibrated one at the same cutoff
+    compares calibration rather than topology.
+
+    Per tile and then averaged, not over a merged region graph — a tile's road network is the unit
+    the model predicts, and merging them would let one dense tile dominate.
+    """
+    from ..pipeline.store import read_tile
+    from .extract import ExtractionSpec, extract_graph
+    from .topology import compare
+
+    probs, tile_ids = rasters
+    spec = ExtractionSpec(threshold=threshold)
+    scores = []
+
+    for probability, tile_id in zip(probs, tile_ids, strict=True):
+        bundle = read_tile(root, tile_id)
+        if bundle.roads is None or not bundle.roads.edges:
+            continue
+        predicted = extract_graph(
+            probability, bundle.tile.read, bundle.manifest.crs,
+            spec=spec, tile_id=tile_id,
+        )
+        scores.append(compare(bundle.roads, predicted, seed=seed))
+
+    if not scores:
+        return None
+    return {
+        "apls": float(np.mean([s.apls for s in scores])),
+        "topo_f1": float(np.mean([s.topo_f1 for s in scores])),
+        "topo_precision": float(np.mean([s.topo_precision for s in scores])),
+        "topo_recall": float(np.mean([s.topo_recall for s in scores])),
+        "tiles": len(scores),
+        "predicted_nodes": int(np.mean([s.proposal_nodes for s in scores])),
+        "truth_nodes": int(np.mean([s.truth_nodes for s in scores])),
     }
