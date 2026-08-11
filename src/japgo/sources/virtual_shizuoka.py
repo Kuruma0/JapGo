@@ -100,6 +100,72 @@ class VirtualShizuokaAdapter(SourceAdapter):
         self._cache = (x, y, z, warnings)
         return self._cache
 
+    def read_grid(
+        self,
+        path: Path,
+        *,
+        bounds: Bounds | None = None,
+        resolution: float = NATIVE_RESOLUTION_M,
+        **kwargs,
+    ) -> ReadResult:
+        """Read the published **Grid** product: whitespace-separated ``x y z`` text.
+
+        This is the preferred terrain input. The publisher has already gridded it at 0.5 m and
+        published it in JGD2011 Plane Rectangular Zone 8 — the project's working CRS — so there is
+        no re-derivation and no reprojection. Distribution is per small mesh (~400 x 300 m, about
+        2 MB zipped), which is why terrain can be fetched for a specific area rather than a
+        prefecture at a time.
+
+        Verified against 08NF5373 (Atami, 2019 LP survey).
+        """
+        self.open()  # provenance gate
+
+        path = Path(path)
+        text = path.read_text(encoding="ascii", errors="replace")
+        values = np.fromstring(text, sep=" ", dtype=np.float64)
+
+        if values.size % 3 != 0:
+            raise ValueError(
+                f"{path.name}: parsed {values.size} numbers, not a multiple of 3. The Grid product "
+                "is 'x y z' per line; a header or a different product would break this."
+            )
+        points = values.reshape(-1, 3)
+        x, y, z = points[:, 0], points[:, 1], points[:, 2]
+
+        extent = bounds or Bounds(
+            float(np.floor(x.min() - resolution / 2)),
+            float(np.floor(y.min() - resolution / 2)),
+            float(np.ceil(x.max() + resolution / 2)),
+            float(np.ceil(y.max() + resolution / 2)),
+        )
+
+        dem = _grid_points(x, y, z, extent, resolution, self.target_crs)
+        warnings: list[str] = []
+
+        if dem.coverage == 0.0:
+            raise ValueError(
+                f"{path.name}: no points fall inside {extent}. The file spans "
+                f"x=[{x.min():.0f}, {x.max():.0f}] y=[{y.min():.0f}, {y.max():.0f}]."
+            )
+        if dem.coverage < 1.0:
+            warnings.append(
+                f"{path.name}: {(1 - dem.coverage) * 100:.1f}% of cells have no value"
+            )
+        for w in warnings:
+            log.warning(w)
+
+        return ReadResult(
+            layers={"elevation": [dem]},
+            record=self.make_record(
+                layers=["elevation"],
+                note=(
+                    f"{path.name}; Grid product (already bare-earth, publisher-gridded); "
+                    f"{resolution} m; {len(points):,} posts"
+                ),
+            ),
+            warnings=warnings,
+        )
+
     def read(
         self,
         path: Path,

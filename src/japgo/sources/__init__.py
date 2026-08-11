@@ -7,6 +7,7 @@ layer is that swapping a source does not ripple downstream.
 
 from .base import ReadResult, SourceAdapter
 from .fetch import ArchiveFetcher, ArchiveMember, HttpRangeFile, RangeNotSupported
+from .meshindex import GRID_INDEX, Mesh, MeshIndex
 from .nlni import NlniLanduseAdapter, load_landuse_spec
 from .osm import OsmAdapter, assert_training_only_use, split_at_intersections
 from .plateau import PlateauAdapter
@@ -15,7 +16,10 @@ from .virtual_shizuoka import VirtualShizuokaAdapter
 __all__ = [
     "ArchiveFetcher",
     "ArchiveMember",
+    "GRID_INDEX",
     "HttpRangeFile",
+    "Mesh",
+    "MeshIndex",
     "NlniLanduseAdapter",
     "OsmAdapter",
     "PlateauAdapter",
