@@ -113,6 +113,11 @@ Do not skip these. Each exists because the failure it prevents is expensive and 
   assembler.
 - **Sliding-window neighbourhood ops.** `sliding_window_view` + a `nan*` reduction is O(n·w²) and
   materialises a view w² times the DEM. Use summed-area tables — see `terrain._box_sum`.
+- **Extracting source archives to disk.** Both major sources punish it. A PLATEAU municipality ZIP
+  is ~15 GB for ~200 MB of building GML — read it remotely with `ArchiveFetcher`, which range-reads
+  the members it needs (measured: 0.0096% of the archive). VIRTUAL SHIZUOKA's Grid text is ~58× the
+  raster it becomes — use `TerrainFetcher`, which grids in memory and caches the raster. Writing the
+  intermediates out costs 43 GB per 100-tile site instead of 0.75 GB.
 - **Letting the model depend on 0.5 m terrain.** VIRTUAL SHIZUOKA is far finer than anything
   available for the rest of Japan. Terrain enters the model at a 1 m working tier with augmentation
   that simulates 30 m sources. Keep the raw 0.5 m for validation and high-detail export.

@@ -11,6 +11,7 @@ from __future__ import annotations
 import http.server
 import threading
 
+import numpy as np
 import pytest
 
 from japgo.geo.crs import zone
@@ -213,3 +214,125 @@ def test_published_index_endpoint_is_the_grid_product():
     """The Grid product is the publisher-derived 0.5 m DEM, which the project prefers."""
     assert "LPGRD" in GRID_INDEX
 
+
+
+# ---------------------------------------------------------------------------------------------
+# TerrainFetcher — in-memory gridding and the raster cache
+# ---------------------------------------------------------------------------------------------
+
+
+def _grid_zip(x0: float, y0: float, size: int = 20, spacing: float = 0.5) -> bytes:
+    """A Grid-product ZIP: one .txt of 'x y z' posts, as the prefecture publishes."""
+    import io
+    import zipfile as zf
+
+    lines = []
+    for i in range(size):
+        for j in range(size):
+            x = x0 + i * spacing
+            y = y0 + j * spacing
+            lines.append(f"{x:.3f} {y:.3f} {100.0 + i:.3f}")
+    buffer = io.BytesIO()
+    with zf.ZipFile(buffer, "w", zf.ZIP_DEFLATED) as archive:
+        archive.writestr("MESH_DEM.txt", "\r\n".join(lines) + "\r\n")
+    return buffer.getvalue()
+
+
+@pytest.fixture
+def mesh_server(tmp_path):
+    from japgo.geo.crs import from_wgs84
+
+    x0, y0 = from_wgs84(ATAMI_LON, ATAMI_LAT, zone(8).crs)
+    payload = _grid_zip(x0, y0)
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_address[1]}/mesh.zip", (x0, y0)
+    server.shutdown()
+
+
+def test_mesh_is_parsed_without_touching_disk(gate, mesh_server, tmp_path):
+    """The XYZ text is ~7x its zipped size; writing it out is the storage problem."""
+    from japgo.sources.meshindex import Mesh, MeshIndex
+
+    url, (x0, y0) = mesh_server
+    index = MeshIndex(gate)
+    x, y, z = index.read_mesh(Mesh("m", url, 0, 0, 0, 0))
+
+    assert x.size == 400
+    assert z.min() == pytest.approx(100.0)
+    assert list(tmp_path.iterdir()) == []  # nothing written
+
+
+def test_terrain_fetcher_grids_into_a_raster(gate, mesh_server, monkeypatch, tmp_path):
+    from japgo.geo.tiling import Bounds
+    from japgo.sources.meshindex import Mesh, TerrainFetcher
+
+    url, (x0, y0) = mesh_server
+    fetcher = TerrainFetcher(gate, cache_dir=tmp_path)
+    monkeypatch.setattr(
+        fetcher.index, "meshes_for", lambda *a, **k: [Mesh("m", url, 0, 0, 0, 0)]
+    )
+
+    bounds = Bounds(x0, y0, x0 + 10, y0 + 10)
+    dem, meshes = fetcher.dem_for(bounds, zone(8).crs, resolution=1.0, key="t")
+    assert meshes == ["m"]
+    assert dem.data.shape == (10, 10)
+    assert dem.coverage == 1.0
+
+
+def test_cache_hit_avoids_refetching(gate, mesh_server, monkeypatch, tmp_path):
+    from japgo.geo.tiling import Bounds
+    from japgo.sources.meshindex import Mesh, TerrainFetcher
+
+    url, (x0, y0) = mesh_server
+    fetcher = TerrainFetcher(gate, cache_dir=tmp_path)
+    calls = []
+
+    def _meshes(*a, **k):
+        calls.append(1)
+        return [Mesh("m", url, 0, 0, 0, 0)]
+
+    monkeypatch.setattr(fetcher.index, "meshes_for", _meshes)
+    bounds = Bounds(x0, y0, x0 + 10, y0 + 10)
+
+    first, _ = fetcher.dem_for(bounds, zone(8).crs, resolution=1.0, key="t")
+    second, _ = fetcher.dem_for(bounds, zone(8).crs, resolution=1.0, key="t")
+
+    assert len(calls) == 1  # the second call never reached the index
+    assert np.array_equal(np.nan_to_num(first.data), np.nan_to_num(second.data))
+
+
+def test_cached_raster_is_far_smaller_than_the_text(gate, mesh_server, monkeypatch, tmp_path):
+    from japgo.geo.tiling import Bounds
+    from japgo.sources.meshindex import Mesh, TerrainFetcher
+
+    url, (x0, y0) = mesh_server
+    fetcher = TerrainFetcher(gate, cache_dir=tmp_path)
+    monkeypatch.setattr(fetcher.index, "meshes_for", lambda *a, **k: [Mesh("m", url, 0, 0, 0, 0)])
+    fetcher.dem_for(Bounds(x0, y0, x0 + 10, y0 + 10), zone(8).crs, resolution=1.0, key="t")
+
+    cached = sum(p.stat().st_size for p in tmp_path.glob("*.npz"))
+    text = 400 * len("53200.250 -107399.750 298.517\r\n")  # what the old route wrote
+    assert cached < text
+
+
+def test_no_cache_dir_still_works(gate, mesh_server, monkeypatch):
+    from japgo.geo.tiling import Bounds
+    from japgo.sources.meshindex import Mesh, TerrainFetcher
+
+    url, (x0, y0) = mesh_server
+    fetcher = TerrainFetcher(gate)
+    monkeypatch.setattr(fetcher.index, "meshes_for", lambda *a, **k: [Mesh("m", url, 0, 0, 0, 0)])
+    dem, _ = fetcher.dem_for(Bounds(x0, y0, x0 + 10, y0 + 10), zone(8).crs, resolution=1.0)
+    assert dem.coverage > 0

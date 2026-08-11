@@ -20,6 +20,8 @@ import logging
 import math
 import urllib.request
 import zipfile
+
+import numpy as np
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -255,6 +257,36 @@ class MeshIndex:
 
     # -------------------------------------------------------------------------------------
 
+    def read_mesh(self, mesh: Mesh) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Download one mesh and parse it to ``(x, y, z)`` **without touching disk**.
+
+        The Grid product is plain text, and text is roughly seven times its zipped size: one tile's
+        terrain is ~30 meshes and 411 MB extracted, against ~9 MB for the raster it becomes. At
+        three sites that difference is tens of gigabytes of intermediate nobody reads twice.
+        """
+        self.gate.assert_ingestible(self.source_id)
+
+        request = urllib.request.Request(mesh.url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(request, timeout=180) as response:
+            blob = response.read()
+
+        columns: list[np.ndarray] = []
+        with zipfile.ZipFile(BytesIO(blob)) as archive:
+            for info in archive.infolist():
+                if info.is_dir() or not info.filename.lower().endswith(".txt"):
+                    continue
+                text = archive.read(info).decode("ascii", "replace")
+                values = np.fromstring(text, sep=" ", dtype=np.float64)
+                if values.size % 3:
+                    log.warning("%s: %d numbers, not a multiple of 3", info.filename, values.size)
+                    continue
+                columns.append(values.reshape(-1, 3))
+
+        if not columns:
+            return (np.empty(0), np.empty(0), np.empty(0))
+        points = np.vstack(columns)
+        return points[:, 0], points[:, 1], points[:, 2]
+
     def download(self, mesh: Mesh, destination: Path) -> list[Path]:
         """Download and unpack one mesh. Returns the extracted files."""
         self.gate.assert_ingestible(self.source_id)
@@ -274,3 +306,96 @@ class MeshIndex:
                 target.write_bytes(archive.read(info))
                 written.append(target)
         return written
+
+
+class TerrainFetcher:
+    """Builds a tile's DEM directly from the published meshes, caching the raster.
+
+    This is the shape terrain ingest should take: stream each mesh, grid it in memory, keep the
+    raster, discard the text. Nothing intermediate reaches disk, and a rebuilt tile is a cache hit
+    rather than a re-download.
+    """
+
+    def __init__(
+        self,
+        gate: SourceGate,
+        *,
+        index: MeshIndex | None = None,
+        cache_dir: Path | None = None,
+    ) -> None:
+        self.gate = gate
+        self.index = index or MeshIndex(gate)
+        self.cache_dir = Path(cache_dir) if cache_dir else None
+
+    def _cache_path(self, key: str, resolution: float) -> Path | None:
+        if self.cache_dir is None:
+            return None
+        return self.cache_dir / f"{key}_{resolution:g}m.npz"
+
+    def dem_for(
+        self,
+        bounds: Bounds,
+        crs,
+        *,
+        resolution: float = 1.0,
+        key: str | None = None,
+        progress: bool = False,
+    ) -> tuple["Raster", list[str]]:
+        """Return the DEM over ``bounds`` and the mesh ids that contributed to it."""
+        from ..geo.raster import Raster
+
+        cache = self._cache_path(key, resolution) if key else None
+        if cache is not None and cache.is_file():
+            payload = np.load(cache, allow_pickle=False)
+            raster = Raster(payload["data"].astype(np.float32), bounds, crs)
+            return raster, [str(m) for m in payload["meshes"]]
+
+        meshes = self.index.meshes_for(bounds, crs)
+        accumulator = Raster.empty(bounds, resolution, crs)
+        used: list[str] = []
+
+        for position, mesh in enumerate(meshes, 1):
+            x, y, z = self.read_mesh_points(mesh)
+            if x.size == 0:
+                continue
+            _accumulate(accumulator, x, y, z, resolution)
+            used.append(mesh.mesh_no)
+            if progress:
+                log.info("terrain %d/%d %s", position, len(meshes), mesh.mesh_no)
+
+        if cache is not None and used:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(cache, data=accumulator.data, meshes=np.array(used))
+
+        return accumulator, used
+
+    def read_mesh_points(self, mesh: Mesh):
+        return self.index.read_mesh(mesh)
+
+
+def _accumulate(target, x: np.ndarray, y: np.ndarray, z: np.ndarray, resolution: float) -> None:
+    """Bin one mesh's posts into an existing raster, in place."""
+    bounds = target.bounds
+    rows, cols = target.data.shape
+
+    inside = (
+        (x >= bounds.minx) & (x < bounds.maxx) & (y >= bounds.miny) & (y < bounds.maxy)
+    )
+    if not inside.any():
+        return
+    x, y, z = x[inside], y[inside], z[inside]
+
+    col = np.floor((x - bounds.minx) / resolution).astype(np.int64)
+    row = np.floor((bounds.maxy - y) / resolution).astype(np.int64)
+    np.clip(col, 0, cols - 1, out=col)
+    np.clip(row, 0, rows - 1, out=row)
+
+    flat = row * cols + col
+    counts = np.bincount(flat, minlength=rows * cols)
+    sums = np.bincount(flat, weights=z, minlength=rows * cols)
+
+    with np.errstate(invalid="ignore"):
+        mean = np.where(counts > 0, sums / np.maximum(counts, 1), np.nan).reshape(rows, cols)
+
+    fill = ~np.isnan(mean)
+    target.data[fill] = mean[fill].astype(np.float32)
