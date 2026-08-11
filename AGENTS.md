@@ -16,15 +16,17 @@ co-author trailers or tool branding. Before pushing, check with
 
 ## Current phase
 
-**Phases 0–3 have a result.** 31 tiles across all three MVP archetypes, built from the published
-sources with nothing staged, and the Phase 3 study reports **27 supported associations** — steeper
-ground carries less road and fewer intersections; greater relief makes roads wind. The project's
-thesis is now measured rather than assumed. Phase 0 closed with no open questions.
+**Phases 0–4 have results.** **81 tiles** across all three MVP archetypes, built from the published
+sources with nothing staged. Phase 3 reports **44 supported associations and 8 nulls** — steeper
+ground carries less road and fewer intersections; greater relief makes roads wind. Phase 4's dull
+U-Net clears both non-learned floors on **3/3 leave-one-site-out folds**, each evaluated on an
+archetype it never saw.
 
-What three sites *cannot* do is establish a null: 68 associations land `inconclusive` because the
-bootstrap has three clusters to resample. More tiles will not fix that; more sites would.
+The control that matters: trained on the flat plain alone it scores F1 0.142 on the mountain valley
+and loses to the built-proximity prior; trained on flat *and* steep it scores 0.335 and wins. The
+model responds to environment, not just to built form.
 
-Done (373 tests):
+Done (386 tests):
 
 | Package | Contents |
 | --- | --- |
@@ -50,10 +52,14 @@ the wheel still ships gfx1030 kernels before taking one.
 Session transcripts do not travel between machines. [docs/decision-log.md](docs/decision-log.md)
 records what happened when the reasoning met real data — read it alongside the research document.
 
-Next: **Phase 4**, the dull U-Net baseline — the GPU is verified and the corpus is trainable.
-Before trusting Phase 3's ranking as an attribution, note that the terrain predictors are
-collinear (slope/relief/roughness rank together), and widen beyond three sites if a *null* result
-is ever needed.
+Next: **graph extraction and the §16.2 metric suite**. Phase 4's exit criterion names APLS/TOPO,
+and the baseline is so far scored on pixel F1 only — probability to centreline to `RoadGraph` is
+the missing step. Precision is the weak side on every fold (0.10–0.50): the class-weighted loss
+over-paints, and a Dice-style objective or a calibrated threshold is the obvious first fix.
+
+Before trusting Phase 3's ranking as an attribution, note that the terrain predictors are collinear
+(slope/relief/roughness rank together). Use `--scheme loso`, not the configured single-site split —
+see the decision log for why that distinction is worth F1 0.142 against 0.335.
 
 Still unwritten: the **e-Stat population** adapter and the **aerial imagery** path (`ORTHO_INDEX`
 in `meshindex` is published but unread).

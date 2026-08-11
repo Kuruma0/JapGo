@@ -304,11 +304,11 @@ Entropy did cleanly isolate the valley at 0.47, which is the *other* prediction 
 "strong alignment with contours and the river corridor". A corridor forces one bearing, so low
 entropy is the correct signature. The measure works; the expectation attached to the plain did not.
 
-**Zero null results.** With three sites nothing can be shown *absent* — 68 associations land as
-`inconclusive`, intervals spanning zero because the bootstrap has three clusters to resample. The
-Phase 3 exit criterion asks for the null results stated, and the honest answer at MVP scale is
-that no null can be established. That is a limitation of three sites, not of the tiles: adding
-tiles to these sites will not narrow those intervals.
+**Zero null results at this corpus size.** With 31 tiles nothing could be shown *absent* — 68
+associations landed `inconclusive`, intervals spanning zero. At the time this was recorded as a
+limitation of having three sites, with the claim that adding tiles would not narrow the intervals.
+
+**That claim was wrong, and the expanded corpus disproves it** — see the 81-tile entry below.
 
 **Collinearity limits attribution.** `slope_median`, `slope_p90`, `roughness_mean` and `relief_m`
 derive from one surface and rank nearly together, so the ranking cannot say which of them carries
@@ -350,6 +350,93 @@ invariant 8 cannot hold across a silent config change.
 **Read the ranking with care even now.** `landuse_built_frac` topping `slope_p90` says "built land
 and roads co-occur", which is close to definitional and is not the project's thesis. The thesis is
 the terrain rows: slope suppressing density and relief driving sinuosity.
+
+---
+
+## 2026-08-11 — 81 tiles, and the nulls appear
+
+The corpus went 31 → **81 tiles**, balanced across the archetypes rather than deepening the one
+that was easiest to extend: Hamamatsu 8 → 26, Kawanehon 8 → 30, Atami 15 → 25. Split validates
+with no geographic leakage, every tile carries targets, and all 81 share one registry hash, one
+stack version and `landuse_v2`.
+
+**The Phase 3 exit criterion is now actually satisfiable.** At 31 tiles the study returned 27
+supported and **zero** null results; at 81 it returns **44 supported and 8 nulls**.
+
+| Predictor | Response | rho | 95% CI |
+| --- | --- | --- | --- |
+| landuse_built_frac | intersection density | +0.950 | [+0.59, +0.96] |
+| slope_above_limit_frac | intersection density | **−0.928** | [−0.95, −0.37] |
+| roughness_mean_m | intersection density | −0.924 | [−0.93, −0.32] |
+| slope_median_pct | intersection density | −0.907 | [−0.91, −0.20] |
+| slope_above_limit_frac | sinuosity median | +0.882 | [+0.23, +0.89] |
+
+And, for the first time, relationships that are *absent* rather than merely unproven — interval
+inside ±0.3:
+
+| Predictor | Response | rho | 95% CI |
+| --- | --- | --- | --- |
+| roughness_mean_m | component count | −0.221 | [−0.27, +0.08] |
+| landuse_water_frac | dead-end ratio | −0.001 | [−0.24, +0.13] |
+| landuse_agricultural_frac | sinuosity p90 | −0.040 | [−0.23, +0.05] |
+
+**This corrects a claim made at 31 tiles**, that intervals were limited by having three sites and
+that adding tiles would not narrow them. Tripling the tiles produced eight nulls where there were
+none. The reason: the bootstrap resamples *sites*, but the statistic inside each resample is
+computed over every tile in the resampled sites, so more tiles per site reduces within-resample
+noise. Between-site disagreement sets the floor on interval width; tile count still moves it.
+Adding sites remains the stronger lever, but "more tiles will not help" was wrong.
+
+Fetch cost stayed negligible against ~334 GB of archives: Hamamatsu 30.4 MB (**0.0113%** of
+269 GB) for 101,427 buildings and 13,989 road edges; Kawanehon 3.2 MB (0.0064% of 50 GB).
+
+---
+
+## 2026-08-11 — Phase 4 baseline: 3/3 folds clear the floor on unseen archetypes
+
+The dull U-Net of spec §51, trained leave-one-site-out so every fold evaluates on an archetype it
+has never seen. Scored against two non-learned priors on the same held-out tiles, each at its own
+best threshold.
+
+| Held out (unseen) | Model F1 | Constant prior | Built-proximity prior | |
+| --- | --- | --- | --- | --- |
+| izu_coast — coastal | **0.524** (P 0.497 / R 0.555) | 0.074 | 0.185 | PASS |
+| hamamatsu_plain — flat | **0.447** (P 0.319 / R 0.748) | 0.000 | 0.284 | PASS |
+| kawanehon_valley — mountain | **0.335** (P 0.365 / R 0.309) | 0.049 | 0.161 | PASS |
+
+Every fold beats **both** floors, including built-proximity — so the model has learned more than
+"roads are where the town is", which was the whole point of including that prior. The difficulty
+ordering is the one [site-selection.md](site-selection.md) predicted: the mountain valley is
+hardest, and it is the site the document names as where the thesis is falsifiable.
+
+### The control: terrain in the training set is what makes the difference
+
+Same held-out site, same architecture, same seed, same epoch count. The only change is whether
+steep ground appears in training.
+
+| Training set | Held out | Model F1 | Verdict |
+| --- | --- | --- | --- |
+| Hamamatsu only — flat (the configured split) | Kawanehon | **0.142** | PARTIAL — loses to built-proximity at 0.161 |
+| Hamamatsu + Izu — flat and steep (LOSO) | Kawanehon | **0.335** | PASS |
+
+**F1 more than doubles.** Trained on the plain alone the model does not even clear the
+built-proximity floor: it learned "road where building", carried that to a mountain valley where
+buildings are 0.6% of cells, and failed. Given steep ground to learn from, the same network on the
+same target recovers roads at more than twice the score.
+
+This is the first direct evidence that the model responds to environment rather than to built
+form alone, and it settles by measurement what was previously an argument for using LOSO. The
+configured single-site split was not merely thin — on this evidence it cannot answer the question
+Phase 4 exists to ask. It is retained as one fold of the LOSO scheme, not as the default.
+
+**What this is not.** F1 against a known mask is a reconstruction score, not the §16.2 metric
+suite: no APLS, no TOPO, no graph extraction yet, so "beats a non-learned prior on APLS/TOPO"
+remains partly open. Precision is the weak side everywhere (0.10–0.50), meaning the model
+over-paints roads — expected from a class-weighted loss at pos_weight 5–31, and the first thing a
+threshold-calibrated or Dice-style objective should improve.
+
+Runs are re-creatable: each checkpoint has a config beside it pinning fold, tile lists, crop,
+batch, epochs, seed, stack version and registry hash `5cf7ff78cf16f0c3`.
 
 ---
 
