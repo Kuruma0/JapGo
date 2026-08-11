@@ -52,6 +52,11 @@ class RunConfig:
     learning_rate: float = 1e-3
     width: int = 32
     seed: int = 0
+    dice_weight: float = 1.0
+    """Weight on the soft-Dice term. Dice punishes extra painted area, which BCE cannot."""
+    max_positive_weight: float = 5.0
+    """Cap on the BCE positive weight. Was effectively 50; an uncapped 31 drove the over-painting
+    that made every junction metric collapse."""
     stack_version: int | None = None
     registry: str | None = None
     channels: list[str] = field(default_factory=list)
@@ -101,7 +106,7 @@ def train_fold(root: Path, fold: Fold, config: RunConfig, *, out_dir: Path) -> R
     """Train on the fold's training sites and evaluate on the site it holds out."""
     import torch
 
-    from .nets import build_unet, masked_bce
+    from .nets import build_unet, masked_bce, masked_dice
 
     assert_no_overlap(fold)
 
@@ -120,9 +125,13 @@ def train_fold(root: Path, fold: Fold, config: RunConfig, *, out_dir: Path) -> R
         raise ValueError(f"{fold.name}: no usable training patches")
 
     rate = road_rate(loader, train_patches, target_index=target_index, crop=config.crop)
-    # Weight the positive class by its own rarity. Measured on the training split only: a weight
-    # taken from the held-out site would be a small but real leak of its statistics.
-    positive_weight = float(min(max((1 - rate) / rate if rate else 1.0, 1.0), 50.0))
+    # Weight the positive class by its own rarity, but cap it far lower than the imbalance implies.
+    # An uncapped weight reached 31 and bought recall by painting generously — 4.6-8.6x the real
+    # junction count once skeletonised. Dice now carries the imbalance; BCE only has to keep the
+    # gradients well behaved early, so a modest weight is enough.
+    positive_weight = float(
+        min(max((1 - rate) / rate if rate else 1.0, 1.0), config.max_positive_weight)
+    )
     log.info(
         "%s: %d train patches, road rate %.3f%%, pos_weight %.1f",
         fold.name, len(train_patches), 100 * rate, positive_weight,
@@ -151,7 +160,11 @@ def train_fold(root: Path, fold: Fold, config: RunConfig, *, out_dir: Path) -> R
 
             optimiser.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=use_amp):
-                loss = masked_bce(model(x), y, valid, positive_weight=positive_weight)
+                logits = model(x)
+                loss = (
+                    masked_bce(logits, y, valid, positive_weight=positive_weight)
+                    + config.dice_weight * masked_dice(logits, y, valid)
+                )
             scaler.scale(loss).backward()
             scaler.step(optimiser)
             scaler.update()

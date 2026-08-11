@@ -35,6 +35,20 @@ from ..geo.tiling import Bounds
 NEIGHBOURS = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
 
 
+def _drop_small(fn, mask, size: int, legacy_kwarg: str):
+    """Call a scikit-image size filter across the 0.26 parameter rename.
+
+    Both filters moved to ``max_size`` and, importantly, changed the comparison from "smaller
+    than" to "smaller than **or equal to**". Passing the old threshold to the new API would remove
+    one pixel more than intended, so the bound is adjusted rather than the call merely renamed.
+    """
+    import inspect
+
+    if "max_size" in inspect.signature(fn).parameters:
+        return fn(mask, max_size=size - 1)
+    return fn(mask, **{legacy_kwarg: size})
+
+
 @dataclass(frozen=True)
 class ExtractionSpec:
     """Knobs, kept in one place so an extraction is reproducible from a record of them."""
@@ -48,6 +62,27 @@ class ExtractionSpec:
     merge_nodes_m: float = 6.0
     """Junctions within this distance collapse. A crossroads skeletonises to two Y-junctions a few
     pixels apart, which doubles the intersection count if left alone."""
+
+    fill_holes_px: int = 64
+    """Pinholes smaller than this are filled before skeletonising.
+
+    The single cheapest fix for junction inflation. A hole anywhere inside a painted blob survives
+    thinning as a **ring**, and a ring contributes two junctions and two edges that no road
+    produced. A model that over-paints produces these by the hundred.
+    """
+
+    min_component_px: int = 48
+    """Connected components smaller than this are dropped: isolated specks of probability become
+    isolated two-node fragments, which cost TOPO precision and contribute nothing routable."""
+
+    prune_spur_m: float = 20.0
+    prune_iterations: int = 3
+    """Dead-end edges shorter than ``prune_spur_m`` are removed, repeatedly.
+
+    Pixel-level pruning only catches first-order spurs: removing one exposes the next, and a frayed
+    blob edge is several deep. Pruning on the graph instead is both simpler and iterative — three
+    passes settle it in practice.
+    """
 
 
 def extract_graph(
@@ -68,7 +103,16 @@ def extract_graph(
     if not mask.any():
         return RoadGraph(crs=str(crs), tile_id=tile_id)
 
-    from skimage.morphology import skeletonize
+    from skimage.morphology import remove_small_holes, remove_small_objects, skeletonize
+
+    # Clean the mask before thinning, not the graph afterwards. A pinhole becomes a ring and a
+    # speck becomes a fragment; both are far cheaper to remove here than to recognise later.
+    if spec.fill_holes_px > 0:
+        mask = _drop_small(remove_small_holes, mask, spec.fill_holes_px, "area_threshold")
+    if spec.min_component_px > 0:
+        mask = _drop_small(remove_small_objects, mask, spec.min_component_px, "min_size")
+    if not mask.any():
+        return RoadGraph(crs=str(crs), tile_id=tile_id)
 
     skeleton = skeletonize(mask)
     paths = _trace(skeleton, min_branch_px=spec.min_branch_px)
@@ -103,7 +147,40 @@ def extract_graph(
             )
         )
 
-    return _merge_close_nodes(graph, spec.merge_nodes_m)
+    graph = _merge_close_nodes(graph, spec.merge_nodes_m)
+    return prune_spurs(graph, spec.prune_spur_m, iterations=spec.prune_iterations)
+
+
+def prune_spurs(graph: RoadGraph, min_length_m: float, *, iterations: int = 3) -> RoadGraph:
+    """Drop short dead-end edges, repeatedly.
+
+    Iterative because removing a spur exposes the one behind it: a frayed blob edge is several
+    layers deep, and a single pass leaves most of the damage in place. Only degree-1 edges are
+    touched, so nothing routable is ever removed — a spur carries no through-traffic by definition.
+    """
+    if min_length_m <= 0:
+        return graph
+
+    for _ in range(max(iterations, 0)):
+        degree = {nid: graph.degree(nid) for nid in graph.nodes}
+        doomed = {
+            eid
+            for eid, edge in graph.edges.items()
+            if edge.length_m < min_length_m and (degree[edge.u] == 1 or degree[edge.v] == 1)
+        }
+        if not doomed:
+            break
+
+        kept = {eid: e for eid, e in graph.edges.items() if eid not in doomed}
+        used = {n for e in kept.values() for n in (e.u, e.v)}
+        graph = RoadGraph(
+            crs=graph.crs,
+            tile_id=graph.tile_id,
+            lod_level=graph.lod_level,
+            nodes={nid: n for nid, n in graph.nodes.items() if nid in used},
+            edges=kept,
+        )
+    return graph
 
 
 # -- tracing ------------------------------------------------------------------------------------

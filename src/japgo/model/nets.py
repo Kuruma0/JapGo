@@ -56,6 +56,30 @@ def build_unet(channels: int, *, width: int = 32, outputs: int = 1):
     return UNet()
 
 
+def masked_dice(logits, target, valid, *, eps: float = 1.0):
+    """Soft Dice over observed pixels — an overlap objective, not a per-pixel one.
+
+    BCE is computed independently per pixel, so the only lever it has against a 3% positive class
+    is `pos_weight`, and a weight of 31 buys recall by making the model paint generously. That
+    shows up as 4.6–8.6× the real junction count once the raster is skeletonised: every blob edge
+    frays into spurs and every pinhole becomes a ring.
+
+    Dice is a ratio of overlap to total mass, so it is already scale-free in the positive class and
+    it *punishes* extra painted area directly — the term BCE lacks. Used alongside BCE rather than
+    instead of it: Dice alone has weak gradients when the prediction is nearly empty, which is
+    exactly where training starts.
+    """
+    import torch
+
+    mask = (valid > 0.5).float()
+    probability = torch.sigmoid(logits.float()) * mask
+    truth = target.float() * mask
+
+    intersection = (probability * truth).sum()
+    total = probability.sum() + truth.sum()
+    return 1.0 - (2.0 * intersection + eps) / (total + eps)
+
+
 def masked_bce(logits, target, valid, *, positive_weight: float):
     """Binary cross-entropy over observed pixels only, weighted toward the positive class.
 

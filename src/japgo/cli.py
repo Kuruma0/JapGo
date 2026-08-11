@@ -625,8 +625,13 @@ def roads_analyse(osm_file: Path, zone_number: int, lod: int | None, area_km2: f
 @click.option("--crop", type=int, default=512, show_default=True)
 @click.option("--width", type=int, default=32, show_default=True)
 @click.option("--seed", type=int, default=0, show_default=True)
+@click.option("--dice-weight", type=float, default=1.0, show_default=True,
+              help="Weight on the soft-Dice term; 0 falls back to BCE only.")
+@click.option("--max-pos-weight", type=float, default=5.0, show_default=True,
+              help="Cap on the BCE positive weight. High values buy recall by over-painting.")
 @click.option("--out", type=click.Path(path_type=Path), default="runs", show_default=True)
-def train(root, split_path, scheme, epochs, batch, crop, width, seed, out):
+def train(root, split_path, scheme, epochs, batch, crop, width, seed, dice_weight,
+          max_pos_weight, out):
     """Phase 4: train the baseline and compare it against the non-learned priors.
 
     The exit criterion is not that it trains — it is that it beats a prior on a site it has never
@@ -657,6 +662,7 @@ def train(root, split_path, scheme, epochs, batch, crop, width, seed, out):
             root=str(root), fold=fold.name,
             train_tiles=fold.train_tiles, eval_tiles=fold.eval_tiles,
             crop=crop, batch=batch, epochs=epochs, width=width, seed=seed,
+            dice_weight=dice_weight, max_positive_weight=max_pos_weight,
         )
         try:
             result = train_fold(Path(root), fold, config, out_dir=Path(out))

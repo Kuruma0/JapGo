@@ -185,3 +185,90 @@ def test_the_metrics_are_reproducible_from_their_seed():
     truth, proposal = _cross(), _cross()
     del proposal.edges["e3"]
     assert apls(truth, proposal, seed=7) == apls(truth, proposal, seed=7)
+
+
+# ---------------------------------------------------------------------------------------------
+# Over-painting defences
+# ---------------------------------------------------------------------------------------------
+
+
+def test_a_pinhole_does_not_become_a_ring():
+    """The cheapest fix for junction inflation.
+
+    A hole inside a painted blob survives thinning as a ring, and a ring contributes two junctions
+    and two edges that no road produced. An over-painting model makes these by the hundred.
+    """
+    prob = np.zeros((200, 200), dtype=np.float32)
+    prob[95:105, :] = 1.0
+    prob[99:101, 100:102] = 0.0            # a 2x2 pinhole in an otherwise solid bar
+
+    leaky = extract_graph(prob, BOUNDS, CRS, resolution=1.0,
+                          spec=ExtractionSpec(fill_holes_px=0, prune_spur_m=0.0))
+    filled = extract_graph(prob, BOUNDS, CRS, resolution=1.0,
+                           spec=ExtractionSpec(fill_holes_px=64, prune_spur_m=0.0))
+
+    assert len(filled.nodes) < len(leaky.nodes)
+    assert len(filled.edges) <= 2          # a bar is one line, however it was punctured
+
+
+def test_isolated_specks_are_dropped():
+    """Specks of probability become unroutable two-node fragments that cost TOPO precision."""
+    prob = np.zeros((200, 200), dtype=np.float32)
+    prob[98:102, :] = 1.0
+    for r, c in ((20, 20), (40, 150), (170, 60)):
+        prob[r : r + 3, c : c + 3] = 1.0   # 3x3 specks, well under min_component_px
+
+    kept = extract_graph(prob, BOUNDS, CRS, resolution=1.0,
+                         spec=ExtractionSpec(min_component_px=0))
+    cleaned = extract_graph(prob, BOUNDS, CRS, resolution=1.0,
+                            spec=ExtractionSpec(min_component_px=48))
+    assert len(cleaned.connected_components()) < len(kept.connected_components())
+
+
+def test_spur_pruning_is_iterative():
+    """Removing one spur exposes the next; a single pass leaves most of a frayed edge in place."""
+    from japgo.model.extract import prune_spurs
+
+    g = _graph([
+        ((0.0, 100.0), (100.0, 100.0)), ((100.0, 100.0), (200.0, 100.0)),
+        ((100.0, 100.0), (100.0, 108.0)),          # spur
+        ((100.0, 108.0), (100.0, 114.0)),          # only reachable once the first goes
+    ])
+    once = prune_spurs(g, 20.0, iterations=1)
+    thrice = prune_spurs(g, 20.0, iterations=3)
+
+    assert len(once.edges) == 3          # outermost spur only
+    assert len(thrice.edges) == 2        # both, leaving the through-road
+    assert all(e.length_m >= 20.0 for e in thrice.edges.values())
+
+
+def test_pruning_never_removes_a_through_road():
+    """Only degree-1 edges are eligible: a spur carries no through traffic by definition."""
+    from japgo.model.extract import prune_spurs
+
+    g = _graph([((0.0, 100.0), (5.0, 100.0)), ((5.0, 100.0), (10.0, 100.0))])
+    pruned = prune_spurs(g, 100.0, iterations=5)
+    # Both edges are short, but the middle node keeps the chain connected until an end is cut.
+    assert len(pruned.edges) < len(g.edges)
+    assert len(pruned.connected_components()) <= len(g.connected_components())
+
+
+def test_dice_punishes_painted_area_that_bce_tolerates():
+    """The whole reason for adding it: BCE scores pixels independently, so extra painted area is
+    only ever a small per-pixel cost. Dice is a ratio, so it responds to the total."""
+    torch = pytest.importorskip("torch")
+    from japgo.model.nets import masked_dice
+
+    truth = torch.zeros(1, 1, 32, 32)
+    truth[..., 15:17, :] = 1.0
+    valid = torch.ones(1, 1, 32, 32)
+
+    def logits_for(rows):
+        z = torch.full((1, 1, 32, 32), -6.0)
+        z[..., rows, :] = 6.0
+        return z
+
+    tight = masked_dice(logits_for(slice(15, 17)), truth, valid)
+    bloated = masked_dice(logits_for(slice(10, 22)), truth, valid)
+    assert tight < bloated                       # painting 6x the width costs more
+    assert tight < 0.05                          # near-perfect overlap scores near zero
