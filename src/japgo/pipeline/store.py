@@ -52,6 +52,8 @@ def write_tile(root: Path, bundle: TileBundle) -> Path:
     array.attrs["channels"] = bundle.spec.names
     array.attrs["stack_version"] = bundle.spec.stack_version
     array.attrs["tile_id"] = bundle.tile.id
+    # Which extent the array covers cannot be recovered from its shape. See TileBundle.with_halo.
+    array.attrs["with_halo"] = bundle.with_halo
 
     if bundle.targets is not None:
         target_path = out / TARGETS_FILE
@@ -139,6 +141,9 @@ def read_tile(root: Path, tile_id: str, *, spec: StackSpec | None = None) -> Til
         buildings=buildings,
         roads=roads,
         targets=targets,
+        # Tiles written before this attribute existed were all halo-inclusive: the assembler
+        # defaults to it and the region builder never overrode it.
+        with_halo=bool(array.attrs.get("with_halo", True)),
     )
 
 

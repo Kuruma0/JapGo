@@ -68,6 +68,16 @@ class TileBundle:
 
     warnings: list[str] = field(default_factory=list)
 
+    with_halo: bool = True
+    """Whether ``stack`` covers the read extent (core plus halo) or the core alone.
+
+    Recorded rather than inferred. The two cases are indistinguishable from the array shape alone
+    — a 1000² stack is either a 1 km core at 1 m or a read extent at 1.512 m — and a consumer that
+    guesses wrong crops a core-only tile down to its middle and reports statistics over 44% of the
+    ground without failing. Same reasoning as ``core_size_m``/``halo_m`` on the manifest: geometry
+    the reader needs is carried, not reconstructed.
+    """
+
     @property
     def shape(self) -> tuple[int, int, int]:
         return tuple(self.stack.shape)  # type: ignore[return-value]
@@ -186,6 +196,7 @@ class TileAssembler:
             roads=inputs.roads,
             targets=targets,
             warnings=warnings,
+            with_halo=with_halo,
         )
 
     # -----------------------------------------------------------------------------------------
