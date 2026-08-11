@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 import re
 from collections import Counter
+from datetime import date
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -259,15 +260,37 @@ class PlateauAdapter(SourceAdapter):
         return ring
 
     def _year_of_construction(self, node: ET.Element) -> int | None:
-        """Construction year, from the core attribute or the uro detail extension."""
-        direct = _int(_text(node, "bldg:yearOfConstruction"))
+        """Construction year, from the core attribute or the uro detail extension.
+
+        Implausible values are discarded rather than propagated — see :func:`_plausible_year`.
+        """
+        direct = _plausible_year(_int(_text(node, "bldg:yearOfConstruction")))
         if direct:
             return direct
 
         detail = _uro_find(node, "yearOfConstruction")
         if detail is not None and detail.text:
-            return _int(detail.text.strip())
+            return _plausible_year(_int(detail.text.strip()))
         return None
+
+
+#: Real PLATEAU data uses ``0001`` as a sentinel for "construction year unknown". Taken at face
+#: value it becomes the year 1, which is not merely wrong but actively corrupting: the §16
+#: development-age thread reads this field, and a cohort of year-1 buildings would drag every
+#: median and skew any age-vs-morphology relationship the project is trying to measure.
+#: Observed in Atami 2023, where 0001 is the most common single value in a mesh tile.
+EARLIEST_PLAUSIBLE_YEAR = 1500
+
+
+def _plausible_year(year: int | None) -> int | None:
+    """Reject sentinel and impossible construction years."""
+    if year is None:
+        return None
+    if year < EARLIEST_PLAUSIBLE_YEAR:
+        return None
+    if year > date.today().year + 1:  # a building completing next year is plausible; 2999 is not
+        return None
+    return year
 
 
 def _float(value: str | None) -> float | None:

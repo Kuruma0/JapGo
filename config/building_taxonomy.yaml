@@ -53,14 +53,18 @@ fine:
 
 # PLATEAU 建物用途 code -> fine type.
 #
-# `confidence: high`   verified against PLATEAU documentation / published code tables.
-# `confidence: medium` inferred from the code block's pattern; reconcile against the shipped
-#                      codelist label on first real ingest before relying on it.
+# `confidence: high`   verified against the codelist shipped inside a real PLATEAU package.
+#
+# All 18 codes were reconciled on 2026-08-11 against codelists/Building_usage.xml from the Atami
+# 2023 package (22205). Every label matched, including the six that had been inferred from the
+# code block's pattern rather than read from documentation. The codelist contained no codes absent
+# from this file and vice versa. The adapter still resolves codeSpace at read time, so a package
+# that extends the list is reported rather than silently bucketed.
 plateau_usage:
   "401": { fine: office,                jp: 業務施設,           confidence: high }
   "402": { fine: retail,                jp: 商業施設,           confidence: high }
-  "403": { fine: accommodation,         jp: 宿泊施設,           confidence: medium }
-  "404": { fine: commercial_mixed,      jp: 商業系複合施設,     confidence: medium }
+  "403": { fine: accommodation,         jp: 宿泊施設,           confidence: high }
+  "404": { fine: commercial_mixed,      jp: 商業系複合施設,     confidence: high }
   "411": { fine: detached_house,        jp: 住宅,               confidence: high }
   "412": { fine: apartment,             jp: 共同住宅,           confidence: high }
   "413": { fine: shophouse,             jp: 店舗等併用住宅,     confidence: high }
@@ -70,10 +74,10 @@ plateau_usage:
   "422": { fine: education_welfare,     jp: 文教厚生施設,       confidence: high }
   "431": { fine: warehouse,             jp: 運輸倉庫施設,       confidence: high }
   "441": { fine: factory,               jp: 工場,               confidence: high }
-  "451": { fine: agricultural_facility, jp: 農林漁業用施設,     confidence: medium }
-  "452": { fine: utility,               jp: 供給処理施設,       confidence: medium }
-  "453": { fine: defence,               jp: 防衛施設,           confidence: medium }
-  "454": { fine: other,                 jp: その他,             confidence: medium }
+  "451": { fine: agricultural_facility, jp: 農林漁業用施設,     confidence: high }
+  "452": { fine: utility,               jp: 供給処理施設,       confidence: high }
+  "453": { fine: defence,               jp: 防衛施設,           confidence: high }
+  "454": { fine: other,                 jp: その他,             confidence: high }
   "461": { fine: unknown,               jp: 不明,               confidence: high }
 
 # OSM tag -> fine type. Lower priority than PLATEAU (research doc §10): PLATEAU usage is an

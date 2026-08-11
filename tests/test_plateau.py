@@ -193,11 +193,70 @@ def test_osm_tags_map_to_taxonomy():
     assert tax.from_osm_building("nonsense") == ("unknown", False)
 
 
-def test_low_confidence_codes_are_flagged_for_reconciliation():
-    """These were inferred rather than verified; reconcile on first real ingest."""
-    assert set(load_taxonomy().low_confidence_codes) == {
-        "403", "404", "451", "452", "453", "454",
-    }
+def test_all_usage_codes_are_reconciled():
+    """Reconciled 2026-08-11 against the codelist shipped in the real Atami 2023 package.
+
+    All 18 matched, including the six previously inferred from the code block's pattern. If a code
+    is ever added with medium confidence, this fails until someone checks it against a real
+    codelist rather than against intuition.
+    """
+    assert load_taxonomy().low_confidence_codes == []
+
+
+# ---------------------------------------------------------------------------------------------
+# Construction year — findings from real data
+# ---------------------------------------------------------------------------------------------
+
+
+def _building_with_year(tmp_path, value: str):
+    import textwrap
+
+    content = textwrap.dedent(f"""\
+        <?xml version="1.0" encoding="UTF-8"?>
+        <core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0"
+            xmlns:bldg="http://www.opengis.net/citygml/building/2.0"
+            xmlns:gml="http://www.opengis.net/gml">
+          <core:cityObjectMember><bldg:Building gml:id="y">
+            <bldg:usage>411</bldg:usage>
+            <bldg:yearOfConstruction>{value}</bldg:yearOfConstruction>
+            <bldg:lod0RoofEdge><gml:MultiSurface><gml:surfaceMember><gml:Polygon>
+              <gml:exterior><gml:LinearRing><gml:posList>
+                34.976 138.383 10.0 34.976 138.3831 10.0 34.9761 138.3831 10.0
+                34.9761 138.383 10.0 34.976 138.383 10.0
+              </gml:posList></gml:LinearRing></gml:exterior>
+            </gml:Polygon></gml:surfaceMember></gml:MultiSurface></bldg:lod0RoofEdge>
+          </bldg:Building></core:cityObjectMember>
+        </core:CityModel>
+        """)
+    path = tmp_path / f"year_{value}.gml"
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def test_sentinel_year_is_discarded(adapter, tmp_path):
+    """PLATEAU writes 0001 for "unknown". In real Atami data 38% of buildings carry it.
+
+    Taken at face value it becomes the year 1 — a cohort that would drag every median in the §16
+    development-age analysis and skew any age-vs-morphology relationship.
+    """
+    result = adapter.read(_building_with_year(tmp_path, "0001"))
+    assert result.layers["buildings"][0].year_of_construction is None
+
+
+def test_absurd_future_year_is_discarded(adapter, tmp_path):
+    result = adapter.read(_building_with_year(tmp_path, "2999"))
+    assert result.layers["buildings"][0].year_of_construction is None
+
+
+def test_plausible_year_is_kept(adapter, tmp_path):
+    result = adapter.read(_building_with_year(tmp_path, "1998"))
+    assert result.layers["buildings"][0].year_of_construction == 1998
+
+
+def test_year_boundary(adapter, tmp_path):
+    """The cutoff must not discard genuinely old buildings — Japan has plenty."""
+    assert adapter.read(_building_with_year(tmp_path, "1600")).layers["buildings"][0].year_of_construction == 1600
+    assert adapter.read(_building_with_year(tmp_path, "1499")).layers["buildings"][0].year_of_construction is None
 
 
 def _by_id(result, building_id):
