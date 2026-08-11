@@ -163,44 +163,53 @@ class RemoteSources:
         west, south, east, north = _wgs84_box(extent, self.crs)
 
         fetcher = ArchiveFetcher(self.gate, "plateau")
-        cached = sorted(destination.glob("*.gml"))
-        if cached:
-            log.info("plateau: %d member(s) already cached", len(cached))
-            self.report.cache_hits += len(cached)
-            paths = cached
-        else:
-            members = fetcher.list_members(self.plateau_url, pattern=BLDG_MEMBER)
-            wanted = [
-                m.name
-                for m in members
-                if (code := code_in(Path(m.name).name)) is None
-                or decode(code).intersects(west, south, east, north)
-            ]
-            log.info(
-                "plateau: %d of %d building members cover the tiles", len(wanted), len(members)
-            )
-            if not wanted:
-                # Loud, because the alternative is a corpus that builds cleanly with every
-                # building channel zero. That looks like "this area has no buildings" rather than
-                # "the tiles and the package do not overlap", and the two are indistinguishable
-                # downstream — the study would report a real-looking null for built form.
-                log.warning(
-                    "plateau: none of %d building members intersect the tiles "
-                    "(tiles span lon %.4f..%.4f lat %.4f..%.4f). Building channels will be "
-                    "empty. Check the site extent against the municipality's coverage.",
-                    len(members), west, east, south, north,
-                )
-                self.report.members = []
-                return
 
+        # The member list is always recomputed, and the cache is consulted per member. Treating
+        # "any GML on disk" as a cache hit was wrong in the way that matters: widening a site's
+        # extent then reused the narrower run's members and the new tiles came out with every
+        # building channel zero — which is indistinguishable downstream from open country.
+        members = fetcher.list_members(self.plateau_url, pattern=BLDG_MEMBER)
+        wanted = [
+            m.name
+            for m in members
+            if (code := code_in(Path(m.name).name)) is None
+            or decode(code).intersects(west, south, east, north)
+        ]
+        if not wanted:
+            # Loud, because the alternative is a corpus that builds cleanly with every building
+            # channel zero. That looks like "this area has no buildings" rather than "the tiles
+            # and the package do not overlap", and the two are indistinguishable downstream —
+            # the study would report a real-looking null for built form.
+            log.warning(
+                "plateau: none of %d building members intersect the tiles "
+                "(tiles span lon %.4f..%.4f lat %.4f..%.4f). Building channels will be empty. "
+                "Check the site extent against the municipality's coverage.",
+                len(members), west, east, south, north,
+            )
+            self.report.members = []
+            return
+
+        missing = [n for n in wanted if not (destination / Path(n).name).is_file()]
+        self.report.cache_hits += len(wanted) - len(missing)
+        log.info(
+            "plateau: %d of %d building members cover the tiles; %d already cached",
+            len(wanted), len(members), len(wanted) - len(missing),
+        )
+
+        if missing:
             # An anchored alternation of the exact member names: the fetcher takes a pattern, and
             # a pattern is how we avoid pulling the members we just decided we do not need.
-            pattern = "(?:%s)$" % "|".join(_escape(n) for n in wanted)
+            pattern = "(?:%s)$" % "|".join(_escape(n) for n in missing)
             fetched = fetcher.extract(self.plateau_url, destination, pattern=pattern)
             self.report.archive_bytes += fetched.bytes_fetched
             self.report.archive_total = fetched.archive_size
             self.report.members = list(fetched.members)
-            paths = sorted(destination.glob("*.gml"))
+
+        paths = [
+            destination / Path(n).name
+            for n in wanted
+            if (destination / Path(n).name).is_file()
+        ]
 
         adapter = PlateauAdapter(self.gate, target_crs=self.crs)
         for path in paths:

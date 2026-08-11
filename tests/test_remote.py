@@ -347,3 +347,58 @@ def test_the_road_class_is_not_an_input_channel():
     assert spec.group_for("road") is None                # falls through to "other"
     # Rail is environmental context, not the target, and stays.
     assert spec.group_for("railway") == "landuse_built"
+
+
+def test_widening_an_extent_fetches_the_newly_needed_members(gate, tmp_path, monkeypatch):
+    """Caching must be per member, not "are there any GML files here".
+
+    Treating any cached file as a hit meant a widened site extent silently reused the narrower
+    run's members, and every tile outside the old extent came out with zero buildings — which is
+    indistinguishable downstream from open country.
+    """
+    from japgo.pipeline.remote import RemoteSources
+
+    # u=5..8 -> lon 139.0625, .0750, .0875, .1000; each 0.0125 wide, lat 35.025..35.0333.
+    names = [f"udx/bldg/5239403{i}_bldg_6697_op.gml" for i in (5, 6, 7, 8)]
+    extracted: list[list[str]] = []
+
+    class _Fetcher:
+        def __init__(self, gate, source_id): pass
+
+        def list_members(self, url, *, pattern=None):
+            from japgo.sources.fetch import ArchiveMember
+            return [ArchiveMember(n, 10, 100) for n in names]
+
+        def extract(self, url, destination, *, pattern, **kw):
+            import re
+            from japgo.sources.fetch import FetchReport
+            destination.mkdir(parents=True, exist_ok=True)
+            hit = [n for n in names if re.search(pattern, n)]
+            for n in hit:
+                (destination / Path(n).name).write_text("<gml/>")
+            extracted.append(hit)
+            return FetchReport(url=url, archive_size=1, bytes_fetched=len(hit), members=hit)
+
+    class _Adapter:
+        def __init__(self, gate, *, target_crs): pass
+        def read(self, path, **kw):
+            from japgo.sources.base import ReadResult
+            return ReadResult(layers={"buildings": []}, record=None, warnings=[])
+        def make_record(self, **kw): return None
+
+    monkeypatch.setattr("japgo.sources.ArchiveFetcher", _Fetcher)
+    monkeypatch.setattr("japgo.sources.PlateauAdapter", _Adapter)
+
+    narrow = Bounds(52000, -109000, 53000, -108000)
+    wide = Bounds(52000, -112000, 56000, -104000)
+
+    first = RemoteSources(gate, CRS, cache_dir=tmp_path, plateau_url="x")
+    first._fetch_buildings(narrow)
+    second = RemoteSources(gate, CRS, cache_dir=tmp_path, plateau_url="x")
+    second._fetch_buildings(wide)
+
+    assert extracted, "nothing was extracted at all"
+    # The wider run must fetch the members the narrow one did not, and must not refetch the rest.
+    assert len(extracted) == 2
+    assert set(extracted[0]).isdisjoint(extracted[1])
+    assert len(extracted[0]) + len(extracted[1]) == len(set(extracted[0]) | set(extracted[1]))
