@@ -16,29 +16,39 @@ co-author trailers or tool branding. Before pushing, check with
 
 ## Current phase
 
-**Phase 1 (data pipeline), in progress.** Phase 0 closed with no open questions.
+**Phases 0–2 complete as tooling; one real tile validated end to end.** Phase 0 closed with no open
+questions. What is *not* yet established is anything statistical — one tile is an anecdote, and
+Phase 3 needs a corpus.
 
-Done (143 tests):
+Done (309 tests):
 
 | Package | Contents |
 | --- | --- |
 | `japgo.provenance` | The gate. 8 policy checks, `SourceGate` as the single enforcement point |
 | `japgo.geo` | CRS, tile grid, `Raster`, terrain derivatives (slope/aspect/roughness/hillshade) |
-| `japgo.core` | Tile manifest, `Building`, `Taxonomy` |
-| `japgo.sources` | Adapter contract, PLATEAU (CityGML), VIRTUAL SHIZUOKA (LAS) |
-| `japgo.pipeline` | Channel spec, rasterisation, `TileAssembler`, Zarr/Parquet store |
+| `japgo.core` | Tile manifest, `Building`, `Taxonomy`, `RoadGraph` + hierarchy/LOD |
+| `japgo.sources` | Adapter contract; PLATEAU, VIRTUAL SHIZUOKA, NLNI, OSM; remote archive and mesh fetchers |
+| `japgo.pipeline` | Channel spec, rasterisation, `TileAssembler`, store, geographic splits, region builder |
+| `japgo.viz` | Phase 2 alignment reports — self-contained HTML, no plotting dependency |
 
-Geospatial stack verified on Windows/py3.13 — GDAL 3.12.4 via wheels, no toolchain build.
+Geospatial stack verified on Windows/py3.13 — GDAL 3.12.4 via wheels, no toolchain build. The
+Python code is platform-clean (no OS-specific imports, no path literals, no case collisions); the
+**training machine runs Linux**, which is also where gfx1030 ROCm support is supported rather than
+community-maintained.
 
-Next: **NLNI land use** and **e-Stat population** adapters, an **OSM adapter** (training-only —
-it must not reach the shipped-geometry path), then the **Phase 2 visualiser**, which gates all
-modelling work. The **Phase 0.5 GPU spike** runs in parallel and blocks nothing before Phase 4.
+Session transcripts do not travel between machines. [docs/decision-log.md](docs/decision-log.md)
+records what happened when the reasoning met real data — read it alongside the research document.
+
+Next: the **Phase 0.5 GPU spike** (`python scripts/gpu_spike.py`), then **scale to a corpus** —
+enough tiles across all three sites for Phase 3's analysis to be statistical. Still unwritten: the
+**e-Stat population** adapter and the **aerial imagery** path (`ORTHO_INDEX` in `meshindex` is
+published but unread).
 
 Settled parameters: commercial use is in scope, with the long-term emphasis on **generated**
 environments and reconstruction kept legally clean alongside; GSI is avoided; the MVP region is
 **Shizuoka Prefecture**; terrain is **VIRTUAL SHIZUOKA at 0.5 m** (CC BY 4.0) with AW3D30 v3.1
-nationally; target hardware is a **16 GB AMD RX 6800**, Windows first with an approved **Linux
-dual-boot** fallback; **reconstruction before generation**.
+nationally; target hardware is a **16 GB AMD RX 6800 on Linux**; **reconstruction before
+generation**.
 
 ## Invariants
 
@@ -132,9 +142,8 @@ Do not skip these. Each exists because the failure it prevents is expensive and 
   available for the rest of Japan. Terrain enters the model at a 1 m working tier with augmentation
   that simulates 30 m sources. Keep the raw 0.5 m for validation and high-detail export.
 - **Fetching AW3D30 "latest".** v4.1 excludes Japan. Pin v3.1.
-- **Assuming the GPU stack works.** gfx1030 on Windows is community-supported only, and ROCm on
-  WSL2 does not reliably work on this card. Run the Phase 0.5 spike before Phase 4 depends on it —
-  and **timebox the Windows attempt to one day**. A Linux dual-boot is an approved destination where
-  gfx1030 is supported; do not spend a week debugging a community build to avoid an OS install.
+- **Assuming the GPU stack works.** Run `scripts/gpu_spike.py` before Phase 4 depends on it. On
+  Linux gfx1030 is a supported ROCm configuration so this should be a confirmation; the historical
+  warnings about Windows wheels and WSL2 no longer apply to the training machine.
 - **Windows-only dependencies.** Linux is a likely training target. Keep paths, subprocess calls and
   GPU-specific code portable from the start; the whole geospatial stack is cross-platform already.

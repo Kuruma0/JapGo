@@ -16,23 +16,34 @@ buildings, building types and street environments are added later without redesi
 **Phase 1 in progress.** Phase 0 is complete with no open questions. The provenance gate, CRS/tiling
 layer and tile manifest are implemented and tested; source adapters are next.
 
+Linux / macOS:
+
 ```bash
-python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -e ".[geo,dev]"
+python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[geo,dev]"
 ```
 
-On a new machine, run the bootstrap afterwards — it recreates the local, untracked files that a
-clone does not carry:
+Windows (PowerShell):
 
 ```bash
-./.venv/Scripts/python.exe scripts/bootstrap.py
+python -m venv .venv; .\.venv\Scripts\Activate.ps1; pip install -e ".[geo,dev]"
 ```
 
-```bash
-./.venv/Scripts/japgo.exe provenance check
-```
+Then, once per machine — this recreates the local untracked files a clone does not carry:
 
 ```bash
-./.venv/Scripts/python.exe -m pytest -q
+python scripts/bootstrap.py
+```
+
+Verify the environment before doing anything else:
+
+```bash
+japgo provenance check && pytest -q
+```
+
+The GPU go/no-go for Phase 4 (see [docs/phase0-research.md](docs/phase0-research.md) §20.1):
+
+```bash
+python scripts/gpu_spike.py
 ```
 
 Settled: MVP region is **Shizuoka Prefecture**; terrain is **VIRTUAL SHIZUOKA at 0.5 m** under
