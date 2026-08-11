@@ -39,7 +39,7 @@ fallback); **reconstruction before generation**.
 | [docs/site-selection.md](docs/site-selection.md) | The three MVP sites and why they were chosen |
 | [docs/data-provenance.md](docs/data-provenance.md) | How the provenance registry works and the rules it enforces |
 | [data/provenance/registry.yaml](data/provenance/registry.yaml) | Machine-readable registry of every candidate data source and its license status |
-| [CLAUDE.md](CLAUDE.md) | Working agreement and invariants for anyone (human or agent) working in this repo |
+| [AGENTS.md](AGENTS.md) | Working agreement and invariants for anyone working in this repo |
 
 ## Core invariants
 

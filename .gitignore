@@ -20,3 +20,6 @@ runs/
 *.pt
 *.onnx
 reports/
+
+# Local agent-tool pointer; the tracked working agreement is AGENTS.md
+CLAUDE.md
