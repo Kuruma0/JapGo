@@ -4,6 +4,16 @@ Read [docs/phase0-research.md](docs/phase0-research.md) before making architectu
 file is the short version: the invariants that must not be violated without an explicit decision to
 change them.
 
+**This file is the entry point.** If you are an assistant or agent picking this project up on a new
+machine, read this file and then the research document; between them they carry every decision and
+the reasoning behind it. Session transcripts do not travel between machines — the repository is the
+handover.
+
+**No AI-assistant attribution anywhere in this repository** — not in commit messages, not in
+filenames, not in file contents. The project is published as the author's own work. Do not add
+co-author trailers or tool branding. Before pushing, check with
+`git log --format='%b' | grep -i <vendor>` and a `git grep` over tracked files.
+
 ## Current phase
 
 **Phase 1 (data pipeline), in progress.** Phase 0 closed with no open questions.

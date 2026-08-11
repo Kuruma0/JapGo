@@ -20,6 +20,13 @@ layer and tile manifest are implemented and tested; source adapters are next.
 python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -e ".[geo,dev]"
 ```
 
+On a new machine, run the bootstrap afterwards — it recreates the local, untracked files that a
+clone does not carry:
+
+```bash
+./.venv/Scripts/python.exe scripts/bootstrap.py
+```
+
 ```bash
 ./.venv/Scripts/japgo.exe provenance check
 ```
