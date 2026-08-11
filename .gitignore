@@ -9,6 +9,7 @@ __pycache__/
 data/raw/
 data/interim/
 data/tiles/
+data/cache/
 *.las
 *.laz
 *.tif

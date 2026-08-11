@@ -16,11 +16,15 @@ co-author trailers or tool branding. Before pushing, check with
 
 ## Current phase
 
-**Phases 0–2 complete as tooling; one real tile validated end to end.** Phase 0 closed with no open
-questions. What is *not* yet established is anything statistical — one tile is an anecdote, and
-Phase 3 needs a corpus.
+**Phases 0–3 have a result.** 31 tiles across all three MVP archetypes, built from the published
+sources with nothing staged, and the Phase 3 study reports **27 supported associations** — steeper
+ground carries less road and fewer intersections; greater relief makes roads wind. The project's
+thesis is now measured rather than assumed. Phase 0 closed with no open questions.
 
-Done (309 tests):
+What three sites *cannot* do is establish a null: 68 associations land `inconclusive` because the
+bootstrap has three clusters to resample. More tiles will not fix that; more sites would.
+
+Done (373 tests):
 
 | Package | Contents |
 | --- | --- |
@@ -30,19 +34,29 @@ Done (309 tests):
 | `japgo.sources` | Adapter contract; PLATEAU, VIRTUAL SHIZUOKA, NLNI, OSM; remote archive and mesh fetchers |
 | `japgo.pipeline` | Channel spec, rasterisation, `TileAssembler`, store, geographic splits, region builder |
 | `japgo.viz` | Phase 2 alignment reports — self-contained HTML, no plotting dependency |
+| `japgo.analysis` | Phase 3 study: environmental predictors, road-structure responses, cluster-bootstrapped ranking |
+| ingest | `sources.overpass` (roads), `sources.jismesh` (PLATEAU member selection), `pipeline.remote` (no staging) |
 
 Geospatial stack verified on Windows/py3.13 — GDAL 3.12.4 via wheels, no toolchain build. The
 Python code is platform-clean (no OS-specific imports, no path literals, no case collisions); the
 **training machine runs Linux**, which is also where gfx1030 ROCm support is supported rather than
 community-maintained.
 
+**The GPU stack is verified, not assumed** (2026-08-11). `torch 2.9.1+rocm6.4` on gfx1030, fp16
+autocast working, **4.03 GB peak** at 512² × 15 channels batch 8 — inside budget without gradient
+checkpointing. R1b closed. Re-run `python scripts/gpu_spike.py` after any torch upgrade, and check
+the wheel still ships gfx1030 kernels before taking one.
+
 Session transcripts do not travel between machines. [docs/decision-log.md](docs/decision-log.md)
 records what happened when the reasoning met real data — read it alongside the research document.
 
-Next: the **Phase 0.5 GPU spike** (`python scripts/gpu_spike.py`), then **scale to a corpus** —
-enough tiles across all three sites for Phase 3's analysis to be statistical. Still unwritten: the
-**e-Stat population** adapter and the **aerial imagery** path (`ORTHO_INDEX` in `meshindex` is
-published but unread).
+Next: **Phase 4**, the dull U-Net baseline — the GPU is verified and the corpus is trainable.
+Before trusting Phase 3's ranking as an attribution, note that the terrain predictors are
+collinear (slope/relief/roughness rank together), and widen beyond three sites if a *null* result
+is ever needed.
+
+Still unwritten: the **e-Stat population** adapter and the **aerial imagery** path (`ORTHO_INDEX`
+in `meshindex` is published but unread).
 
 Settled parameters: commercial use is in scope, with the long-term emphasis on **generated**
 environments and reconstruction kept legally clean alongside; GSI is avoided; the MVP region is

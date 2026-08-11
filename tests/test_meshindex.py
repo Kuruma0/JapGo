@@ -336,3 +336,75 @@ def test_no_cache_dir_still_works(gate, mesh_server, monkeypatch):
     monkeypatch.setattr(fetcher.index, "meshes_for", lambda *a, **k: [Mesh("m", url, 0, 0, 0, 0)])
     dem, _ = fetcher.dem_for(Bounds(x0, y0, x0 + 10, y0 + 10), zone(8).crs, resolution=1.0)
     assert dem.coverage > 0
+
+
+# ------------------------------------------------------------------------------------------------
+# Multiple published indexes
+# ------------------------------------------------------------------------------------------------
+
+
+def test_every_published_grid_index_is_consulted_by_default(gate):
+    """VIRTUAL SHIZUOKA is several separately published surveys, not one endpoint.
+
+    Querying only the 2019 survey returns zero meshes everywhere west of Izu — which does not look
+    like a coverage gap downstream. It looks like a tile with no terrain, and the builder skips it
+    for low coverage. Measured 2026-08-11: Atami resolves only in the 2019 index, Hamamatsu and
+    Kawanehon only in 中・西部.
+    """
+    from japgo.sources.meshindex import GRID_INDEX, GRID_INDEX_MW, GRID_INDEXES, MeshIndex
+
+    assert GRID_INDEX in GRID_INDEXES and GRID_INDEX_MW in GRID_INDEXES
+    assert MeshIndex(gate).templates == GRID_INDEXES
+    # An explicit single template still wins, so a caller can pin one survey.
+    assert MeshIndex(gate, template=GRID_INDEX).templates == (GRID_INDEX,)
+
+
+def test_a_mesh_found_in_a_later_index_is_still_returned(gate, monkeypatch):
+    """Off-coverage index tiles 403, which reads as empty. The second index must still be tried."""
+    from japgo.sources.meshindex import GRID_INDEX, GRID_INDEX_MW, Mesh, MeshIndex
+
+    index = MeshIndex(gate)
+    only_in_second = Mesh(
+        mesh_no="09LD0000", url="https://example.invalid/09LD0000.zip",
+        min_lon=138.0, min_lat=35.0, max_lon=138.1, max_lat=35.1,
+    )
+
+    def one_index(template, tx, ty):
+        return [only_in_second] if template == GRID_INDEX_MW else []
+
+    monkeypatch.setattr(index, "_read_one_index", one_index)
+    assert [m.mesh_no for m in index._read_index_tile(0, 0)] == ["09LD0000"]
+
+    # And the same mesh appearing in both is returned once, not twice.
+    monkeypatch.setattr(index, "_read_one_index", lambda t, x, y: [only_in_second])
+    assert len(index._read_index_tile(0, 0)) == 1
+
+
+def test_both_published_grid_text_formats_parse_to_the_same_points():
+    """The 2019 and 2025 surveys ship different layouts. Reading the 5-column form positionally
+    as the 3-column one takes the sequence number for an easting — a well-formed raster of the
+    wrong place, with no error anywhere."""
+    from japgo.sources.meshindex import parse_grid_text
+
+    old = "50000.250 -105299.750 225.858\r\n50000.750 -105299.750 225.812\r\n"
+    new = "1,50000.25,-105299.75,225.858,1\r\n2,50000.75,-105299.75,225.812,0\r\n"
+
+    expected = np.array([[50000.25, -105299.75, 225.858], [50000.75, -105299.75, 225.812]])
+    assert np.allclose(parse_grid_text(old), expected)
+    assert np.allclose(parse_grid_text(new), expected)
+
+
+def test_the_classification_flag_does_not_drop_posts():
+    """Both flag values carry real elevations; filtering on it would punch holes in the DEM."""
+    from japgo.sources.meshindex import parse_grid_text
+
+    text = "1,10.0,20.0,5.0,1\n2,10.5,20.0,5.1,0\n3,11.0,20.0,5.2,0\n"
+    assert parse_grid_text(text).shape == (3, 3)
+
+
+def test_a_ragged_or_too_narrow_file_yields_nothing_rather_than_garbage():
+    from japgo.sources.meshindex import parse_grid_text
+
+    assert parse_grid_text("1.0 2.0\n3.0 4.0\n").shape == (0, 3)   # only two columns
+    assert parse_grid_text("").shape == (0, 3)
+    assert parse_grid_text("1,2,3,4,5\n6,7,8\n").shape == (0, 3)   # ragged

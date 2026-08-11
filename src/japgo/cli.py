@@ -260,6 +260,26 @@ def tiles_channels() -> None:
     show_default=True,
     help="Skip tiles with less than this fraction of real observations.",
 )
+@click.option(
+    "--remote",
+    is_flag=True,
+    help="Fetch from the published sources instead of staged files. Terrain is streamed and "
+    "cached as raster; PLATEAU members are range-read; roads come from Overpass.",
+)
+@click.option(
+    "--cache",
+    type=click.Path(path_type=Path),
+    default="data/cache",
+    show_default=True,
+    help="Where --remote keeps fetched terrain rasters, GML members and Overpass responses.",
+)
+@click.option(
+    "--bbox",
+    nargs=4,
+    type=float,
+    default=None,
+    help="Override the site extent for this run: minlon minlat maxlon maxlat (WGS84).",
+)
 def tiles_build(
     site: str | None,
     data_root: Path,
@@ -268,11 +288,18 @@ def tiles_build(
     limit: int | None,
     all_sites: bool,
     min_coverage: float,
+    remote: bool,
+    cache: Path,
+    bbox: tuple[float, ...] | None,
 ) -> None:
     """Build a manifest-carrying tile set for a site.
 
-    Source files are found by convention under DATA_ROOT/<site>/{terrain,plateau,landuse,roads}/.
+    By default source files are found by convention under
+    DATA_ROOT/<site>/{terrain,plateau,landuse,roads}/. With --remote nothing needs staging: the
+    published endpoints are read directly and only the derived rasters are cached.
     """
+    from .geo.crs import from_wgs84
+    from .geo.tiling import Bounds
     from .pipeline import RegionBuilder, SourceFiles, build_default_split, load_sites
 
     sites = load_sites()
@@ -291,19 +318,58 @@ def tiles_build(
     )
     written: dict[str, list[str]] = {}
 
+    extent = None
+    if bbox:
+        if all_sites:
+            raise click.UsageError("--bbox overrides one site's extent; it cannot apply to all")
+        crs = builder.zone.crs
+        x0, y0 = from_wgs84(bbox[0], bbox[1], crs)
+        x1, y1 = from_wgs84(bbox[2], bbox[3], crs)
+        extent = Bounds(min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
+
     for name in names:
         if name not in sites.sites:
             raise click.ClickException(f"unknown site {name!r}; have {', '.join(sites.sites)}")
 
         spec = sites.sites[name]
-        files = SourceFiles.discover(data_root, name)
-        planned = builder.tiles_for(name)
+        planned = builder.tiles_for(name, bounds=extent)
 
         click.secho(f"\n{name}  ({spec.archetype})", bold=True)
-        click.echo(f"  tiles planned : {len(planned)}")
-        click.echo(f"  sources       : {files.describe()}")
+        click.echo(f"  tiles planned : {len(planned)}{'  (bbox override)' if extent else ''}")
 
-        report = builder.build(name, files, out, limit=limit)
+        if remote:
+            import logging
+
+            from .pipeline.remote import RemoteSources
+
+            # A remote build is minutes of network per tile. Silence for that long is
+            # indistinguishable from a hang, and the INFO lines are where the counts live.
+            logging.basicConfig(
+                level=logging.INFO, format="  %(message)s", force=True
+            )
+
+            plateau_url = getattr(spec, "plateau_url", None)
+            if not plateau_url:
+                click.secho(
+                    f"  no plateau_url in config/sites.yaml for {name}; "
+                    "building without buildings",
+                    fg="yellow",
+                )
+            source = RemoteSources(
+                gate,
+                builder.zone.crs,
+                cache_dir=cache / name,
+                plateau_url=plateau_url,
+                resolution=resolution,
+            )
+            click.echo(f"  mode          : remote (cache {cache / name})")
+            report = builder.build_from(name, source, out, limit=limit, bounds=extent)
+            click.echo(f"  fetched       : {source.describe()}")
+        else:
+            files = SourceFiles.discover(data_root, name)
+            click.echo(f"  sources       : {files.describe()}")
+            report = builder.build(name, files, out, limit=limit)
+
         written[name] = report.tiles_written
 
         colour = "green" if report.ok else "red"
@@ -329,6 +395,58 @@ def tiles_build(
 @main.group()
 def splits() -> None:
     """Define and validate geographic train/test splits."""
+
+
+@splits.command("build")
+@click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
+@click.option("--out", type=click.Path(path_type=Path), default=None, help="Default ROOT/split.json.")
+def splits_build(root: Path, out: Path | None) -> None:
+    """Assign the tiles already on disk to their sites and write a split.
+
+    ``tiles build`` writes a split only when one invocation produced several sites. A corpus grown
+    one site at a time — which is how it actually gets built, because each site has its own extent
+    and its own municipality package — never gets one. Without it every tile counts as a single
+    group and no association can be given an interval, since the bootstrap resamples sites.
+
+    Membership comes from each site's configured extent in ``config/sites.yaml``, which is the only
+    thing that knows where a site is; a tile manifest does not record its site.
+    """
+    from .pipeline import RegionBuilder, build_default_split, load_sites
+    from .pipeline.store import list_tiles
+
+    sites = load_sites()
+    builder = RegionBuilder(SourceGate(load_registry()), sites=sites)
+
+    on_disk = set(list_tiles(root))
+    if not on_disk:
+        raise click.ClickException(f"no tiles under {root}")
+
+    written: dict[str, list[str]] = {}
+    claimed: set[str] = set()
+    for name in sites.sites:
+        ids = [t.id for t in builder.tiles_for(name) if t.id in on_disk]
+        if ids:
+            written[name] = ids
+            claimed |= set(ids)
+        click.echo(f"  {name:<20} {len(ids)} tile(s)")
+
+    orphans = on_disk - claimed
+    if orphans:
+        click.secho(
+            f"  {len(orphans)} tile(s) fall outside every configured site extent and are left "
+            f"out: {', '.join(sorted(orphans)[:4])}{' ...' if len(orphans) > 4 else ''}",
+            fg="yellow",
+        )
+    if len(written) < 2:
+        click.secho(
+            "  only one site has tiles — a split will not give the study anything to resample",
+            fg="yellow",
+        )
+
+    definition = build_default_split(builder, written)
+    path = definition.write(out or root / "split.json")
+    click.secho(f"\nsplit written: {path}", bold=True)
+    click.echo(f"  {definition.counts}")
 
 
 @splits.command("show")
@@ -492,6 +610,48 @@ def roads_analyse(osm_file: Path, zone_number: int, lod: int | None, area_km2: f
 
     for w in result.warnings:
         click.secho(f"warning: {w}", fg="yellow")
+
+
+@main.command("study")
+@click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
+@click.option(
+    "--split",
+    "split_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Split definition, for site grouping. Without it every tile counts as one site and no "
+    "interval can be estimated.",
+)
+@click.option("--iterations", type=int, default=2000, show_default=True)
+@click.option("--seed", type=int, default=0, show_default=True, help="Pinned for reproducibility.")
+@click.option("--limit", type=int, default=None, help="Show only the top N in each section.")
+def study(root: Path, split_path: Path | None, iterations: int, seed: int, limit: int | None):
+    """Phase 3: which environmental features predict road structure?
+
+    Reports the null results alongside the supported ones, because the phase's exit criterion
+    asks for both. An association whose interval spans zero is a finding, not a gap.
+    """
+    from .analysis.study import run_study
+
+    try:
+        result, skipped = run_study(
+            root, split_path=split_path, iterations=iterations, seed=seed
+        )
+    except FileNotFoundError as exc:
+        raise click.ClickException(
+            f"{exc}\nBuild a corpus first: japgo tiles build --all-sites"
+        ) from exc
+
+    if not result.tiles:
+        raise click.ClickException(
+            f"no usable tiles under {root}. One tile is an anecdote and none is not a study — "
+            "see docs/decision-log.md."
+        )
+
+    click.echo(result.report(limit=limit))
+
+    for note in skipped:
+        click.secho(f"skipped {note}", fg="yellow")
 
 
 if __name__ == "__main__":  # pragma: no cover

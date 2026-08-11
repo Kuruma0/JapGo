@@ -16,6 +16,9 @@ sites:
     archetype: suburban_plain
     municipality: 浜松市 / 磐田市
     bbox: [137.70, 34.68, 137.80, 34.76]
+    # Hamamatsu 浜松市 (22130), FY2023, CityGML v4 — 269 GB. Never staged: members are
+    # range-read by mesh code. Iwata (22211) is the other municipality here.
+    plateau_url: https://assets.cms.plateau.reearth.io/assets/f0/ed11d3-e112-4d83-bd6f-d5f41ef75c79/22130_hamamatsu-shi_city_2023_citygml_2_op.zip
     note: >
       Flat alluvial plain, regular blocks, medium-density detached housing. The easy case — if a
       model does poorly here the pipeline is broken rather than the hypothesis.
@@ -28,6 +31,8 @@ sites:
     archetype: mountain_valley
     municipality: 川根本町
     bbox: [138.05, 35.05, 138.15, 35.15]
+    # Kawanehon 川根本町 (22429), FY2023, CityGML v4 — 50 GB.
+    plateau_url: https://assets.cms.plateau.reearth.io/assets/8e/2f254d-c3e7-4842-9417-9f053a47203c/22429_kawanehon-cho_city_2023_citygml_2_op.zip
     note: >
       Upper Ōi River valley with the Ōigawa Railway. Settlement pinned to the valley floor, roads
       forced onto contours. The site where the project's thesis is falsifiable: a model that has
@@ -40,7 +45,10 @@ sites:
   izu_coast:
     archetype: coastal_constrained
     municipality: 熱海市 / 伊東市
-    bbox: [139.05, 34.90, 139.15, 35.00]
+    bbox: [139.05, 34.90, 139.15, 35.05]
+    # Atami 熱海市 (22205), FY2023, CityGML v4. Ito is the other municipality in this archetype
+    # and needs its own package (22208) before the northern and southern halves can both build.
+    plateau_url: https://assets.cms.plateau.reearth.io/assets/72/490cd0-9f53-4ca2-b4cd-20475dc10030/22205_atami-shi_city_2023_citygml_2_op.zip
     note: >
       Terrain meeting sea. Development compressed into a narrow coastal strip and up steep slopes
       behind it. Tests a different terrain response from the valley: not "follow the corridor" but

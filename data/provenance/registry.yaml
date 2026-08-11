@@ -7,8 +7,11 @@
 # See docs/phase0-research.md §6 for the licensing analysis behind the usage_tier values.
 
 registry_version: 2
-last_reviewed: 2026-08-10
+last_reviewed: 2026-08-11
 reviewed_by: project owner       # four Phase 0 decisions received 2026-08-10; see research doc
+# 2026-08-11: nlni_landuse re-pinned to the FY2016 vintage by owner decision. The entry previously
+# named an FY2021 vintage that does not exist for this product. Terms re-verified against the
+# datalist's per-vintage 使用許諾条件 field — FY2016 is the open-data one. See that entry's notes.
 
 # Project-wide policy set by those decisions:
 #   commercial_intent: true      -> NO research-only or non-commercial source may be ingested,
@@ -271,26 +274,42 @@ sources:
     name: 国土数値情報 土地利用細分メッシュ (L03-b) and related NLNI products
     source: MLIT National Land Numerical Information
     url: https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-L03-b.html
-    license: Government of Japan standard terms (CC-BY-4.0 compatible) — VERIFY PER VINTAGE
+    license: 政府標準利用規約 v2.0 — CC BY 4.0 compatible (confirmed for FY2016, see notes)
     share_alike: none
     geographic_coverage: Japan
     resolution: Mesh (3rd mesh ~1 km, fine mesh ~100 m)
-    vintage: Spec v3.1, FY2021 data
+    vintage: L03-b-16 (平成28年度 / FY2016) — the newest published; confirmed 2026-08-11
+    distribution_url_pattern: https://nlftp.mlit.go.jp/ksj/gml/data/L03-b/L03-b-16/L03-b-16_{mesh}-jgd_GML.zip
     modalities: [landuse, admin_boundaries, rail, stations, facilities, hazard_zones]
     allowed_uses: [research, commercial, ml_training, derivative_works]
-    commercial_restrictions: none      # for the pinned vintage; re-verify on version change
+    commercial_restrictions: none      # 商用利用も可能です, confirmed for this vintage
     attribution_required: true
-    attribution_string: "出典: 国土数値情報 (国土交通省)"
-    derivative_restrictions: none beyond attribution
+    attribution_string: "出典: 国土数値情報 土地利用細分メッシュ (国土交通省)"
+    derivative_restrictions: none beyond attribution and marking modifications
     training_restrictions: none stated
     redistribution_restrictions: none stated
     usage_tier: public
     output_role: redistributable_core
     layer_isolation: recommended
     notes: >
-      The download site explicitly warns that license conditions differ between versions. Terms are
-      recorded per product per vintage, never per site. Any product whose vintage terms cannot be
-      confirmed is set to quarantined.
+      Vintage re-pinned 2026-08-11 by owner decision, replacing an entry that read "Spec v3.1,
+      FY2021 data". No FY2021 land-use mesh exists: the datalist publishes L03-b in FY1976, 1987,
+      1991, 1997, 2006, 2009, 2014 and 2016 only, and the sibling products agree. The original
+      entry appears to have taken the specification version for the data vintage.
+
+      FY2016 is not a fallback — it is the best-licensed vintage of this product. The datalist's
+      使用許諾条件 field reads 平成28年度：適用する利用規約に基づく（オープンデータ） while every
+      other vintage is merely 商用可 under the older 旧国土情報利用約款. The applicable rules are
+      政府標準利用規約 v2.0, which state 商用利用も可能です and declare themselves compatible with
+      CC BY 4.0. Take the -jgd (世界測地系 / JGD2000) files, not -tky.
+
+      Derived in part from GSI material — 電子国土基本図 plus SPOT/RapidEye imagery. This does not
+      engage the §6.3 GSI decision: that quarantines bulk use of GSI's own survey products, which
+      require 複製承認. This is an MLIT-published derived dataset carrying its own open-data terms,
+      a different legal object. Recorded because the question will be asked again.
+
+      The site still warns that conditions differ between versions, so terms remain recorded per
+      product per vintage. Any vintage whose terms cannot be confirmed is quarantined.
 
   - id: estat_mesh_population
     name: e-Stat census mesh population

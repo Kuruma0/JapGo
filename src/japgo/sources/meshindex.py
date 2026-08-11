@@ -33,10 +33,33 @@ from .fetch import USER_AGENT
 
 log = logging.getLogger(__name__)
 
-#: Published index endpoints for the 2019 LP (aerial LiDAR) survey.
+#: Published index endpoints for the 2019 LP (aerial LiDAR) survey — 富士山南東部・伊豆東部.
 GRID_INDEX = "https://gic-shizuoka.s3.ap-northeast-1.amazonaws.com/2020/Vectortile2025/LPGRD/{z}/{x}/{y}.pbf"
 ORTHO_INDEX = "https://gic-shizuoka.s3.ap-northeast-1.amazonaws.com/2020/Vectortile2025/LPORTHO/{z}/{x}/{y}.pbf"
 CONTOUR_INDEX = "https://gic-shizuoka.s3.ap-northeast-1.amazonaws.com/2020/Vectortile2025/LPCONT/{z}/{x}/{y}.pbf"
+
+#: The 2025 中・西部 (central/west) release, published as a separate dataset with its own index.
+GRID_INDEX_MW = (
+    "https://gic-shizuoka.s3.ap-northeast-1.amazonaws.com/2025/Vectortile/mw/LP/merge/grid"
+    "/{z}/{x}/{y}.pbf"
+)
+ORTHO_INDEX_MW = (
+    "https://gic-shizuoka.s3.ap-northeast-1.amazonaws.com/2025/Vectortile/mw/LP/merge/ortho"
+    "/{z}/{x}/{y}.pbf"
+)
+
+GRID_INDEXES = (GRID_INDEX, GRID_INDEX_MW)
+"""Every published grid index, consulted together.
+
+VIRTUAL SHIZUOKA covers the prefecture, but it does so as **several separately published surveys,
+each with its own vector-tile index** — not one prefecture-wide endpoint. Querying only the 2019
+survey silently returns zero meshes everywhere west of Izu, which does not look like a coverage
+gap: it looks like a tile with no terrain, and the builder skips it for low coverage. Measured
+2026-08-11: Atami resolves only in the 2019 index, Hamamatsu and Kawanehon only in 中・西部.
+
+Off-coverage index tiles 403, which :meth:`MeshIndex._read_index_tile` already treats as empty, so
+consulting all of them costs one extra ~5 KB request per index tile and no correctness.
+"""
 
 INDEX_ZOOM = 14
 """Zoom at which one index tile covers a useful area without returning thousands of features."""
@@ -158,15 +181,74 @@ def _to_lonlat(px: float, py: float, extent: int, zoom: int, tx: int, ty: int) -
     return lon, lat
 
 
+def parse_grid_text(text: str, *, source: str = "?") -> np.ndarray:
+    """Parse a Grid product's ``.txt`` into an ``(n, 3)`` array of ``x, y, z``.
+
+    **The two published surveys do not use the same format**, and the difference is invisible until
+    a parse fails — or worse, does not::
+
+        2019 富士山南東部・伊豆東部   50000.250 -105299.750 225.858       x y z, space separated
+        2025 中・西部                1,-40399.75,-101400.25,754.30,1     seq,x,y,z,flag, commas
+
+    So the layout is sniffed per file rather than assumed. Assuming the 3-column form and reading
+    the 5-column one positionally would take the sequence number as an easting — producing a
+    perfectly well-formed raster of the wrong place.
+
+    The 5th column of the 2025 form is 0 or 1 and is **not** a nodata flag: measured 2026-08-11 on
+    mesh 08NC3989, both values carry plausible elevations over the same 417–755 m range (0: 175,523
+    posts, 1: 304,477). Dropping either would punch holes in the DEM, so all posts are kept.
+    """
+    line = next((raw for raw in text.lstrip().splitlines() if raw.strip()), "")
+    if not line:
+        return np.empty((0, 3))
+
+    if "," in line:
+        width = len(line.split(","))
+        # fromstring wants one separator; newlines between records are not it.
+        flat = np.fromstring(text.replace("\r\n", ",").replace("\n", ",").strip(","), sep=",")
+    else:
+        width = len(line.split())
+        flat = np.fromstring(text, sep=" ")
+
+    if width < 3:
+        log.warning("%s: %d column(s) per row, need at least 3", source, width)
+        return np.empty((0, 3))
+    if flat.size % width:
+        log.warning(
+            "%s: %d numbers is not a multiple of the %d columns seen in the first row",
+            source, flat.size, width,
+        )
+        return np.empty((0, 3))
+
+    rows = flat.reshape(-1, width)
+    # 3 columns are x y z; the wider form leads with a sequence number.
+    first = 0 if width == 3 else 1
+    return rows[:, first : first + 3]
+
+
 class MeshIndex:
     """Finds VIRTUAL SHIZUOKA mesh downloads for an area, under the provenance gate."""
 
     source_id = "virtual_shizuoka"
 
-    def __init__(self, gate: SourceGate, *, template: str = GRID_INDEX, zoom: int = INDEX_ZOOM) -> None:
+    def __init__(
+        self,
+        gate: SourceGate,
+        *,
+        template: str | None = None,
+        templates: tuple[str, ...] | None = None,
+        zoom: int = INDEX_ZOOM,
+    ) -> None:
         self.gate = gate
-        self.template = template
+        self.templates = (
+            (template,) if template else tuple(templates) if templates else GRID_INDEXES
+        )
         self.zoom = zoom
+
+    @property
+    def template(self) -> str:
+        """The first configured index. Retained so single-index callers still read naturally."""
+        return self.templates[0]
 
     def meshes_for(self, bounds: Bounds, crs) -> list[Mesh]:
         """Every indexed mesh intersecting ``bounds`` (given in ``crs``)."""
@@ -195,7 +277,15 @@ class MeshIndex:
         return sorted(found.values(), key=lambda m: m.mesh_no)
 
     def _read_index_tile(self, tx: int, ty: int) -> list[Mesh]:
-        url = self.template.format(z=self.zoom, x=tx, y=ty)
+        """Meshes from every configured index at this tile, deduplicated by mesh number."""
+        found: dict[str, Mesh] = {}
+        for template in self.templates:
+            for mesh in self._read_one_index(template, tx, ty):
+                found.setdefault(mesh.mesh_no, mesh)
+        return list(found.values())
+
+    def _read_one_index(self, template: str, tx: int, ty: int) -> list[Mesh]:
+        url = template.format(z=self.zoom, x=tx, y=ty)
         request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
@@ -276,11 +366,9 @@ class MeshIndex:
                 if info.is_dir() or not info.filename.lower().endswith(".txt"):
                     continue
                 text = archive.read(info).decode("ascii", "replace")
-                values = np.fromstring(text, sep=" ", dtype=np.float64)
-                if values.size % 3:
-                    log.warning("%s: %d numbers, not a multiple of 3", info.filename, values.size)
-                    continue
-                columns.append(values.reshape(-1, 3))
+                points = parse_grid_text(text, source=info.filename)
+                if points.size:
+                    columns.append(points)
 
         if not columns:
             return (np.empty(0), np.empty(0), np.empty(0))

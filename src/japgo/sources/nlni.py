@@ -26,8 +26,25 @@ from .base import ReadResult, SourceAdapter
 
 log = logging.getLogger(__name__)
 
+
+def _box(bounds: Bounds):
+    from shapely.geometry import box
+
+    return box(bounds.minx, bounds.miny, bounds.maxx, bounds.maxy)
+
 DEFAULT_LANDUSE_PATH = Path("config/landuse.yaml")
 LANDUSE_CODE_FIELD = "L03b_002"
+
+SHAPEFILE_CODE_FIELD = "土地利用種"
+"""The code column in the FY2016 shapefile distribution.
+
+The GML/GeoJSON form uses ``L03b_002``; the shapefile form uses the Japanese name, because DBF
+field names are capped at 10 bytes and the publisher chose readability. Neither is wrong, and a
+build that assumes one gets a clear error rather than silence — the adapter lists the columns it
+actually found.
+"""
+
+SHAPEFILE_ENCODING = "cp932"
 
 
 class LanduseSpec(BaseModel):
@@ -91,9 +108,16 @@ class NlniLanduseAdapter(SourceAdapter):
         bounds: Bounds,
         resolution: float = 1.0,
         code_field: str = LANDUSE_CODE_FIELD,
+        encoding: str | None = None,
         **kwargs,
     ) -> ReadResult:
-        """Rasterise land use mesh polygons into one binary coverage raster per channel group."""
+        """Rasterise land use mesh polygons into one binary coverage raster per channel group.
+
+        ``encoding`` is needed for the shapefile distribution: its DBF is Shift-JIS with Japanese
+        column names (``土地利用種``) and carries no ``.cpg``, so a reader left to guess produces
+        mojibake column names and cannot find the code field at all. Pass ``cp932`` for those.
+        GeoJSON needs nothing.
+        """
         self.open()  # provenance gate
 
         import geopandas as gpd
@@ -102,7 +126,15 @@ class NlniLanduseAdapter(SourceAdapter):
         from ..pipeline.rasterize import transform_for
 
         path = Path(path)
-        frame = gpd.read_file(path)
+        options = {"encoding": encoding} if encoding else {}
+        # Read only the mesh cells over this tile. A primary-mesh land use file is ~50 MB and
+        # covers roughly 90 x 74 km; parsing all of it once per 1.5 km tile is most of a build.
+        try:
+            window = gpd.GeoSeries([_box(bounds)], crs=self.target_crs)
+            frame = gpd.read_file(path, bbox=window, **options)
+        except Exception as exc:  # noqa: BLE001 - fall back rather than fail the tile
+            log.debug("%s: bbox filter unavailable (%s); reading whole file", path.name, exc)
+            frame = gpd.read_file(path, **options)
 
         if code_field not in frame.columns:
             raise ValueError(
@@ -164,6 +196,10 @@ class NlniLanduseAdapter(SourceAdapter):
             layers=layers,
             record=self.make_record(
                 layers=sorted(layers),
+                # The grouping decides what each channel *means*, so a tile built under a
+                # different landuse_version is a different sample. Recording it here is what
+                # lets invariant 8 hold across a config change.
+                version=f"landuse_v{self.spec.landuse_version}",
                 note=f"{path.name}; {len(frame)} mesh cells; field={code_field}",
             ),
             warnings=warnings,

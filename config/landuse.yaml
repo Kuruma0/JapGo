@@ -11,7 +11,7 @@
 # road structure: is it built, farmed, forested, or wet. Codes outside the four groups fold into
 # an implicit "other" — all four channels zero — which costs nothing and loses little.
 
-landuse_version: 1
+landuse_version: 2
 
 # NLNI 土地利用種別 code -> semantic class.
 nlni_codes:
@@ -44,8 +44,20 @@ classes:
   - unknown
 
 # Semantic class -> raster channel. A class absent here reaches the model only as "other".
+#
+# v2 (2026-08-11): `road` removed from landuse_built. It is the TARGET.
+#
+# NLNI code 0901 道路 marks road corridors, and landuse_built is a model *input* while road_mask is
+# what the model predicts. Leaving it in leaks the answer into the question — and leaks it exactly
+# where wide arterials are, which are the easiest and most valuable roads to get right. Measured
+# before removal: 0901 is ~1% of cells in the three MVP primary meshes (Hamamatsu 4,488 of ~640k),
+# so it did not manufacture the Phase 3 correlations, but 1% of a target is still a leak.
+#
+# Those cells now fall through to "other" — all four channels zero. A hole is neutral; a leak is
+# not. `railway` stays: rail is legitimate environmental context (research doc §8) and is not what
+# the model predicts.
 channel_groups:
-  landuse_built:        [built_up, road, railway]
+  landuse_built:        [built_up, railway]
   landuse_agricultural: [paddy, agriculture]
   landuse_forest:       [forest]
   landuse_water:        [water, sea, beach]

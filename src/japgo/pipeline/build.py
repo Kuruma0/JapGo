@@ -13,6 +13,7 @@ import logging
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from typing import Protocol
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -38,6 +39,14 @@ class SiteSpec(BaseModel):
     bbox: tuple[float, float, float, float]
     municipality: str | None = None
     note: str | None = None
+
+    plateau_url: str | None = None
+    """CityGML package for this site's municipality, read remotely by ``--remote``.
+
+    Recorded per site because the URL is per municipality and per vintage, and the vintage is part
+    of what makes a build reproducible (invariant 8). Resolve a new one from the G-Spatial CKAN
+    API: ``package_show?id=plateau-<code>-<name>-shi-<year>``.
+    """
 
 
 class SitesConfig(BaseModel):
@@ -128,6 +137,28 @@ class BuildReport:
         return bool(self.tiles_written)
 
 
+class TileInputSource(Protocol):
+    """Where a build's per-tile inputs come from.
+
+    Two implementations: :class:`_FileSource` over staged local files, and
+    :class:`~japgo.pipeline.remote.RemoteSources` over the published endpoints. An optional
+    ``prepare(tiles)`` lets a provider fetch region-wide inputs once before the loop starts.
+    """
+
+    def inputs_for(self, tile: Tile) -> TileInputs | None: ...
+
+
+class _FileSource:
+    """Adapts the staged-files path to :class:`TileInputSource`."""
+
+    def __init__(self, builder: RegionBuilder, files: SourceFiles) -> None:
+        self._builder = builder
+        self._shared = builder._read_shared(files)
+
+    def inputs_for(self, tile: Tile) -> TileInputs | None:
+        return self._builder._inputs_for(tile, self._shared)
+
+
 class RegionBuilder:
     """Builds a tile set for one site."""
 
@@ -155,10 +186,16 @@ class RegionBuilder:
 
     # -----------------------------------------------------------------------------------------
 
-    def tiles_for(self, site: str) -> list[Tile]:
+    def tiles_for(self, site: str, *, bounds: Bounds | None = None) -> list[Tile]:
+        """Tiles covering a site, or covering ``bounds`` if given.
+
+        The override exists for smoke runs over a known-interesting sub-extent. Site bboxes in
+        ``config/sites.yaml`` are deliberately approximate pending first ingest, and a ten-tile
+        run starting at the corner of an approximate box is usually ten tiles of sea.
+        """
         if site not in self.sites.sites:
             raise KeyError(f"unknown site {site!r}; have {sorted(self.sites.sites)}")
-        return list(self.grid.tiles_covering(self.sites.bounds_of(site)))
+        return list(self.grid.tiles_covering(bounds or self.sites.bounds_of(site)))
 
     def site_record(self, site: str, tile_ids: list[str]) -> Site:
         return Site(
@@ -176,23 +213,44 @@ class RegionBuilder:
         limit: int | None = None,
     ) -> BuildReport:
         """Build and write every tile for a site."""
-        report = BuildReport(site=site)
-        tiles = self.tiles_for(site)
-        if limit is not None:
-            tiles = tiles[:limit]
-
         if files.is_empty:
+            report = BuildReport(site=site)
             report.warnings.append(
                 f"no source files found for {site}. Expected them under "
                 f"<root>/{site}/{{terrain,plateau,landuse,roads}}/"
             )
             return report
 
-        shared = self._read_shared(files)
+        return self.build_from(site, _FileSource(self, files), out_root, limit=limit)
+
+    def build_from(
+        self,
+        site: str,
+        source: TileInputSource,
+        out_root: Path,
+        *,
+        limit: int | None = None,
+        bounds: Bounds | None = None,
+    ) -> BuildReport:
+        """Build a site from any input provider.
+
+        Split out from :meth:`build` so that where the bytes come from — staged files or the
+        published sources over the network — is the only thing that varies. Coverage gating,
+        manifest writing, attribution and the one-bad-tile-does-not-abort-a-region behaviour are
+        identical either way, and duplicating them would be how the two paths drift apart.
+        """
+        report = BuildReport(site=site)
+        tiles = self.tiles_for(site, bounds=bounds)
+        if limit is not None:
+            tiles = tiles[:limit]
+
+        prepare = getattr(source, "prepare", None)
+        if prepare is not None:
+            prepare(tiles)
 
         for tile in tiles:
             try:
-                inputs = self._inputs_for(tile, shared)
+                inputs = source.inputs_for(tile)
                 if inputs is None:
                     report.tiles_skipped.append(tile.id)
                     continue
