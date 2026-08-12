@@ -31,6 +31,15 @@ distance weighting. Defaults are pinned to it and covered by a test so they cann
 whatever the last experiment used; every alternative stays reachable from the CLI. The three
 changes after v2 were regressions.
 
+Re-established on the current corpus (`runs/reference`), it beats the best centreline variant on
+identical data by **+45% APLS, +37% TOPO, +107% pixel F1**, with precision and recall within six
+points on every fold — the first run whose folds agree rather than trading wins. Topology beats the
+prior on **2/3**; Kawanehon still fails at APLS 0.010 against 0.012 and has in every configuration.
+
+It does **not** reproduce v2's own 0.092: that was 81 tiles at stack v1, this is 74 at stack v2, a
+41% gap on the same configuration. Resolving which of those two differences caused it is the
+cheapest informative experiment left, and it bears directly on the corpus-size hypothesis.
+
 Junction inflation went **4.78× → 0.99×** across those changes and APLS never followed, so junction
 count was a symptom throughout. **Do not tune the objective further** without a reason beyond "the
 last thing did not work" — five configurations put APLS in 0.015–0.19 regardless of target, loss

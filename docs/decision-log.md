@@ -894,6 +894,46 @@ numbers; `runs/reference` re-establishes the baseline on the corpus as it stands
 
 ---
 
+## 2026-08-12 — The reference re-established on the current corpus; the revert was right
+
+`runs/reference` is the v2 configuration trained on the corpus as it now stands, so it is directly
+comparable with the three centreline variants — same 74 tiles, same seed, same epochs.
+
+| Run (74-tile corpus) | mean APLS | mean TOPO F1 | mean pixel F1 |
+| --- | --- | --- | --- |
+| v3 centreline | 0.036 | 0.271 | 0.244 |
+| v4 + distance weighting | 0.037 | 0.218 | 0.237 |
+| v5 + true positive weight | 0.031 | 0.277 | 0.164 |
+| **reference (v2 config)** | **0.054** | **0.380** | **0.505** |
+
+**+45% APLS, +37% TOPO, +107% pixel F1** over the best centreline variant on identical data. The
+revert was correct, and this is the first run where the three folds agree rather than trading wins.
+
+Per fold, and the balance is the notable part:
+
+| Held out | pixel F1 | APLS | TOPO F1 | nodes / real | vs prior |
+| --- | --- | --- | --- | --- | --- |
+| hamamatsu | 0.537 (P .487 R .598) | **0.096** | 0.352 | 1335 / 740 (1.8×) | PASS |
+| izu | 0.526 (P .500 R .556) | 0.055 | **0.412** | 189 / 75 (2.5×) | PASS |
+| kawanehon | 0.451 (P .452 R .450) | 0.010 | 0.375 | 136 / 45 (3.0×) | FAIL |
+
+Precision and recall sit within six points of each other on every fold. Every centreline variant
+was lopsided — v4 ran TOPO precision 0.553 against recall 0.058 — and the balance here is what a
+model that has actually fitted the target looks like. Topology beats the prior on **2/3**.
+
+**Do not read this as v2 reproduced.** v2 scored mean APLS 0.092 on the *81-tile* corpus at stack
+v1; the reference scores 0.054 on 74 tiles at stack v2. Same configuration, different data, and a
+41% gap between them. Either the seven dropped tiles mattered more than their count suggests, or
+stack v2 changed something that is not the target channel — worth knowing which, because it bears
+directly on the corpus-size hypothesis. That is now the single most informative cheap experiment
+available: rebuild the wider extents, retrain the reference, and see whether APLS tracks tile count.
+
+**Kawanehon still fails**, at APLS 0.010 against the prior's 0.012, and it has failed or scraped
+past in every configuration. It is the sparsest network (45 junctions per tile), the steepest site,
+and the one the thesis rests on. Whatever is limiting the project is most visible there.
+
+---
+
 ## Corrections — things believed and then disproved
 
 Recorded because the wrong version is the intuitive one and will otherwise be re-derived.
