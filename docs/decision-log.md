@@ -838,6 +838,62 @@ does not move recall, the limit is the corpus or the architecture, not the loss.
 
 ---
 
+## 2026-08-12 — Five configurations measured; v2 is the reference, and three changes were regressions
+
+Mean APLS across the three leave-one-site-out folds, same corpus, same seed, same epochs:
+
+| Version | hamamatsu | izu | kawanehon | mean APLS |
+| --- | --- | --- | --- | --- |
+| v1 width target, BCE | 0.181 | 0.044 | 0.015 | 0.080 |
+| **v2 width target, +Dice** | **0.187** | **0.075** | 0.015 | **0.092** |
+| v3 centreline target | 0.047 | 0.038 | **0.022** | 0.036 |
+| v4 centreline, +distance weighting | 0.042 | 0.059 | 0.009 | 0.037 |
+| v5 centreline, +true positive weight | 0.036 | 0.039 | 0.019 | 0.031 |
+
+**v2 is the best model the project has produced and the last three changes were all regressions
+on it** — mean APLS 0.092 against 0.031–0.037. Defaults are now pinned to v2 and covered by a test,
+so they cannot drift to whatever the most recent experiment happened to use. Every alternative
+stays reachable from the CLI.
+
+**What each change taught, since none of it was wasted:**
+
+*Dice earned its place* (v1 → v2) and is kept: it improved APLS on two folds and is the only term
+that penalises painted area directly.
+
+*The centreline target* (v3) did exactly what it was designed to do and cost two thirds of APLS on
+the dense site. A hairline gives a dense network too thin a signal to learn from. It remains built
+into every tile and selectable, because being able to re-run the comparison is worth the channel.
+
+*Distance weighting* (v4) drove junction inflation to 0.99× — perfect parity — and moved APLS not
+at all. That result, more than any other, is what showed junction count was a symptom.
+
+*The true positive weight* (v5) behaved exactly as predicted in both directions: TOPO recall rose
+six-fold (0.058 → 0.350) and precision halved, inflation returned to 4.69×, APLS unmoved. It is a
+real lever on recall and not on the metric that matters.
+
+**A claim of mine to correct.** After v5's first fold I said the width-versus-centreline gap was a
+"consistent 4×". It is not consistent — it is specific to **Hamamatsu**, the dense site
+(0.187 → 0.047). On Izu and Kawanehon the two targets are comparable and within noise. The dense
+network is where a fatter target helps; I generalised from one fold before the others had run.
+
+**The stopping rule is met.** Five configurations put APLS between 0.015 and 0.19 regardless of
+target, loss composition or class weighting. The objective is not the constraint, and further
+tuning of it should not be attempted without a reason that is not "the last thing did not work".
+
+**Two candidates for what actually binds**, neither yet tested:
+
+1. *The corpus.* 74 tiles, ~800 patches per fold, 8 epochs. That is very little for a segmentation
+   network, and every fold's failure looks like under-fitting rather than mis-specification.
+2. *Node placement.* APLS depends on junctions being in the right **places**; everything measured
+   so far constrains their **number**. A placement-error measure — mean distance from each
+   predicted junction to its nearest real one — would separate the two, and does not exist yet.
+
+**Note on reproducing v2.** The v2 figures above come from the 81-tile corpus at stack v1. The
+current corpus is 74 tiles at stack v2, so reverting the configuration does not reproduce the
+numbers; `runs/reference` re-establishes the baseline on the corpus as it stands now.
+
+---
+
 ## Corrections — things believed and then disproved
 
 Recorded because the wrong version is the intuitive one and will otherwise be re-derived.

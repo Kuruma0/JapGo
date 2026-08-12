@@ -166,3 +166,24 @@ def test_built_proximity_is_flat_in_window_size():
     # inflating the total — the mean stays put while the covered fraction grows.
     assert (large > 0).mean() > (small > 0).mean()
     assert large.mean() == pytest.approx(small.mean(), rel=0.05)
+
+
+def test_the_reference_configuration_is_the_one_that_measured_best():
+    """v2 — width target, Dice, positive weight capped at 5, no distance weighting.
+
+    Five configurations were measured end to end on the same folds. v2 scored mean APLS 0.092
+    against 0.031-0.037 for the three centreline variants that followed it, so the defaults are
+    pinned here rather than left as whatever the last experiment used. Every alternative remains
+    reachable through the CLI; none of them is the default.
+    """
+    from japgo.model.baseline import ROAD_CENTRELINE_TARGET, ROAD_TARGET
+    from japgo.model.train import RunConfig
+
+    c = RunConfig(root="x", fold="y", train_tiles=[], eval_tiles=[])
+    assert ROAD_TARGET == "road_mask"                 # width, not the hairline
+    assert c.dice_weight == 1.0                       # Dice earned its place in v2
+    assert c.max_positive_weight == 5.0               # raising it cost precision without APLS
+    assert c.distance_tolerance_px == 0.0             # a thin-target device, off here
+
+    # The alternative stays selectable, because the comparison is worth being able to re-run.
+    assert ROAD_CENTRELINE_TARGET == "road_centreline"

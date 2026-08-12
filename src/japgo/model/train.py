@@ -54,14 +54,20 @@ class RunConfig:
     seed: int = 0
     dice_weight: float = 1.0
     """Weight on the soft-Dice term. Dice punishes extra painted area, which BCE cannot."""
-    distance_tolerance_px: float = 8.0
+    distance_tolerance_px: float = 0.0
     """Distance over which a false positive ramps to full cost; 0 disables the weighting.
 
-    A hairline target punishes a two-pixel miss as hard as a road in the sea, so the safest thing
-    a network can do is predict less — which is exactly what it did."""
+    Off by default. It exists for the hairline target, where a two-pixel miss is punished as hard
+    as a road in the sea; against the width mask it is unnecessary and measured slightly worse
+    (v4). Set it when experimenting with thin targets."""
     max_positive_weight: float = 5.0
-    """Cap on the BCE positive weight. Was effectively 50; an uncapped 31 drove the over-painting
-    that made every junction metric collapse."""
+    """Ceiling on the BCE positive weight, which otherwise takes the class's inverse frequency.
+
+    5.0 is the reference value, measured best against the width target (~3% positive). Raising it
+    to the true inverse frequency was tried in v5 and behaved exactly as predicted in both
+    directions: recall rose sharply (TOPO recall 0.058 -> 0.350) and precision halved, with
+    junction inflation returning to 4.69x and APLS unmoved. Worth raising only alongside a target
+    sparse enough to need it."""
     stack_version: int | None = None
     registry: str | None = None
     channels: list[str] = field(default_factory=list)

@@ -21,18 +21,28 @@ co-author trailers or tool branding. Before pushing, check with
 associations and 8 nulls** — steeper ground carries less road and fewer intersections; greater
 relief makes roads wind.
 
-Phase 4's exit criterion — beat a non-learned prior on APLS/TOPO on an unseen archetype — was met
-on 3/3 folds under the width target and is now met on **2/3** under the centreline target. Treat it
-as **not cleanly met**. The centreline change cut junction inflation from 4.1× to 1.45–2.0× and
-APLS did *not* follow: it fell on two folds and cost Hamamatsu its pass. Junction count was a
-symptom, not the cause — a network can carry nearly the right number of junctions and still route
-nothing like the real one.
+Phase 4's exit criterion — beat a non-learned prior on APLS/TOPO on an unseen archetype — is **not
+cleanly met**, and five measured configurations say the objective is not why. Mean APLS across the
+folds: v1 width+BCE 0.080, **v2 width+Dice 0.092**, v3 centreline 0.036, v4 +distance weighting
+0.037, v5 +true positive weight 0.031.
+
+**v2 is the reference configuration** — width target, Dice, positive weight capped at 5, no
+distance weighting. Defaults are pinned to it and covered by a test so they cannot drift to
+whatever the last experiment used; every alternative stays reachable from the CLI. The three
+changes after v2 were regressions.
+
+Junction inflation went **4.78× → 0.99×** across those changes and APLS never followed, so junction
+count was a symptom throughout. **Do not tune the objective further** without a reason beyond "the
+last thing did not work" — five configurations put APLS in 0.015–0.19 regardless of target, loss
+composition or class weighting. The untested candidates are the **corpus** (74 tiles, ~800
+patches/fold; every fold looks under-fitted) and **node placement**, which nothing measures yet:
+APLS needs junctions in the right *places*, and every metric so far constrains their *number*.
 
 The control that matters, and it survives every change so far: trained on the flat plain alone the
 model *loses* to the prior on the mountain valley; trained on flat **and** steep it wins. Same
 site, same seed. The model responds to environment, not just to built form.
 
-Done (419 tests):
+Done (420 tests):
 
 | Package | Contents |
 | --- | --- |

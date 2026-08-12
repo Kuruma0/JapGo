@@ -23,16 +23,22 @@ from dataclasses import dataclass
 
 import numpy as np
 
-ROAD_TARGET = "road_centreline"
-"""What the model predicts.
+ROAD_TARGET = "road_mask"
+"""What the model predicts: road presence at carriageway width.
 
-The width mask is still carried for validation, but training against it taught the network to
-paint a carriageway-wide band — correct for that target, and the direct cause of the junction
-inflation that survived the loss fix. Extraction thins to a centreline regardless, so the
-objective may as well be the thing that gets consumed.
+Reverted from ``road_centreline`` after five configurations were measured end to end. The
+centreline target did fix what it was aimed at — junction inflation fell from 4.78x to parity —
+and cost roughly two thirds of APLS on the dense site while doing it (0.187 -> 0.047 on Hamamatsu,
+mean 0.092 -> 0.036 across folds). Three further changes failed to recover it.
+
+The reading is that a hairline gives a dense network too thin a signal to learn from. Junction
+count was a symptom the whole time; APLS never responded to any of it. See
+docs/decision-log.md for the full arc.
 """
 
-ROAD_WIDTH_TARGET = "road_mask"
+ROAD_CENTRELINE_TARGET = "road_centreline"
+"""Still built into every tile, still selectable, no longer the default. Kept because the
+comparison is worth being able to re-run, not because it is recommended."""
 
 
 @dataclass(frozen=True)

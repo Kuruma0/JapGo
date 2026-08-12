@@ -628,10 +628,13 @@ def roads_analyse(osm_file: Path, zone_number: int, lod: int | None, area_km2: f
 @click.option("--dice-weight", type=float, default=1.0, show_default=True,
               help="Weight on the soft-Dice term; 0 falls back to BCE only.")
 @click.option("--max-pos-weight", type=float, default=5.0, show_default=True,
-              help="Cap on the BCE positive weight. High values buy recall by over-painting.")
+              help="Ceiling on the BCE positive weight. 5.0 is the reference value; raise "
+                   "toward the true inverse frequency only for a sparser target.")
+@click.option("--distance-tolerance-px", type=float, default=0.0, show_default=True,
+              help="Soften false positives within this distance of a road. For thin targets; off by default.")
 @click.option("--out", type=click.Path(path_type=Path), default="runs", show_default=True)
 def train(root, split_path, scheme, epochs, batch, crop, width, seed, dice_weight,
-          max_pos_weight, out):
+          max_pos_weight, distance_tolerance_px, out):
     """Phase 4: train the baseline and compare it against the non-learned priors.
 
     The exit criterion is not that it trains — it is that it beats a prior on a site it has never
@@ -663,6 +666,7 @@ def train(root, split_path, scheme, epochs, batch, crop, width, seed, dice_weigh
             train_tiles=fold.train_tiles, eval_tiles=fold.eval_tiles,
             crop=crop, batch=batch, epochs=epochs, width=width, seed=seed,
             dice_weight=dice_weight, max_positive_weight=max_pos_weight,
+            distance_tolerance_px=distance_tolerance_px,
         )
         try:
             result = train_fold(Path(root), fold, config, out_dir=Path(out))
