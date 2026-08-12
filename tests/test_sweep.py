@@ -154,7 +154,7 @@ def test_the_quantile_sweep_keeps_the_null_and_opposes_its_two_arms():
     from japgo.model.sweep import quantile_sweep
 
     # Held-out slope 0.8 sits between the two references, so one arm flattens and one steepens.
-    null, flat_ref, steep_ref = quantile_sweep(
+    null, _shuffle, flat_ref, steep_ref = quantile_sweep(
         {"hamamatsu_plain": 0.07, "kawanehon_valley": 1.45}, held_out_median=0.8
     )
     assert null.factor == 1.0 and set(null.expect.values()) == {"flat"}
@@ -174,10 +174,46 @@ def test_expectations_are_set_against_home_not_against_the_other_reference():
     """
     from japgo.model.sweep import quantile_sweep
 
-    _, first, second = quantile_sweep(
+    _null, _shuffle, first, second = quantile_sweep(
         {"izu_coast": 1.21, "kawanehon_valley": 1.45}, held_out_median=0.07
     )
     # Home is flatter than both, so *both* arms steepen and both carry the steeper expectation.
     for arm in (first, second):
         assert arm.expect["road_density_km_per_km2"] == "down"
         assert arm.expect["sinuosity_median"] == "up"
+
+
+def test_shuffling_preserves_the_histogram_and_destroys_the_geography():
+    """The diagnostic for the magnitude reading.
+
+    Across three folds the response tracked how far the slope distribution moved and not which
+    way. Shuffling separates histogram from geography directly: the marginal is untouched to the
+    last pixel, and every trace of where the slopes were is gone.
+    """
+    from japgo.model.sweep import ShuffleChannel
+
+    rng = np.random.default_rng(0)
+    stack = np.zeros((2, 32, 32), dtype=np.float32)
+    stack[0] = np.linspace(0, 1, 32 * 32).reshape(32, 32)      # a smooth spatial gradient
+    stack[1] = rng.random((32, 32))
+
+    out, clamped = ShuffleChannel("s", "slope", {}).apply(stack, 0)
+
+    assert clamped == 0.0
+    assert np.allclose(np.sort(out[0].ravel()), np.sort(stack[0].ravel()))   # same histogram
+    assert not np.allclose(out[0], stack[0])                                 # different places
+    assert np.allclose(out[1], stack[1])                                     # one channel only
+
+
+def test_the_shuffle_arm_is_in_the_quantile_sweep_and_is_reproducible():
+    from japgo.model.sweep import ShuffleChannel, quantile_sweep
+
+    arms = quantile_sweep({"a": 0.1, "b": 1.0}, held_out_median=0.5)
+    shuffles = [a for a in arms if isinstance(a, ShuffleChannel)]
+    assert len(shuffles) == 1
+
+    stack = np.zeros((1, 16, 16), dtype=np.float32)
+    stack[0] = np.arange(256).reshape(16, 16)
+    first, _ = shuffles[0].apply(stack, 0)
+    second, _ = shuffles[0].apply(stack, 0)
+    assert np.allclose(first, second)          # seeded: a diagnostic must be re-runnable

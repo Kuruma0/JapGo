@@ -32,7 +32,7 @@ The control that matters, and it survives every change so far: trained on the fl
 model *loses* to the prior on the mountain valley; trained on flat **and** steep it wins. Same
 site, same seed. The model responds to environment, not just to built form.
 
-Done (417 tests):
+Done (419 tests):
 
 | Package | Contents |
 | --- | --- |
@@ -64,10 +64,13 @@ proportion to distance, is what the original note proposed and what stack v2 onl
 
 **The sweep has produced its first real answer, and it is negative.** `japgo sweep --mode
 quantile` gives a held-out tile another real site's slope distribution, value for value — nothing
-out of distribution left to blame. Swept on all three folds, the slope channel behaves as a
-**magnitude input, not a terrain input**: all four large distribution swaps cut road density —
-two steeper, two flatter — and both small swaps raise it. Six for six on the *size* of the change,
-three for six on its *direction*, which is chance.
+out of distribution left to blame. Swept on all three folds, the model uses the slope channel
+intensively and still gets the geography wrong. Changing the values while keeping the pattern
+(quantile map), the response tracks the *size* of the change and not its direction — six for six on
+magnitude, three for six on direction, which is chance. Keeping the values and destroying the
+pattern (shuffle), the prediction **collapses to near zero**. So it is neither ignoring terrain nor
+reading it as a bare magnitude: it has fitted a narrow joint distribution and degrades under any
+departure from it.
 
 This is **risk R2, caught by the only instrument that could catch it**. Beating the priors on three
 archetypes was compatible with a model that had learned terrain properly; the sweep shows this one

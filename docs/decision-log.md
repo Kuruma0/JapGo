@@ -748,6 +748,47 @@ input normalisation rather than architecture.
 
 ---
 
+## 2026-08-12 — Shuffle test: the magnitude hypothesis is wrong
+
+The previous entry proposed that the slope channel was acting as a magnitude input — that the model
+read its histogram and not its geography. The shuffle arm tests that directly: same marginal
+distribution to the last pixel, spatial structure destroyed.
+
+| Held out | baseline density | slope shuffled | change |
+| --- | --- | --- | --- |
+| izu_coast | 1.135 | **0.000** | −100% |
+| kawanehon_valley | 1.569 | **0.023** | −99% |
+| hamamatsu_plain | 6.666 | 4.234 | −36% |
+
+**The prediction collapses.** Two folds go to essentially zero road. A model reading only the
+histogram would not have moved at all, so the magnitude hypothesis is refuted: the model depends
+heavily on *where* the slopes are, not merely on what values are present.
+
+The fold ordering is an internal check that the diagnostic works. Hamamatsu is the flat site, its
+slope field is nearly uniform, and shuffling a nearly uniform field changes little — so the
+smallest response belongs to the tile with the least spatial structure to destroy. Exactly what
+should happen if the arm is measuring what it claims.
+
+**This also clarifies what the quantile arm was testing, which was not what I assumed.** A quantile
+map is a *monotone* transform of the tile's own field: whichever pixel was steepest stays steepest.
+It preserves spatial pattern exactly and changes only the marginal distribution. So the two arms
+are cleanly complementary — quantile changes values and keeps geography, shuffle keeps values and
+destroys geography — and the model responds strongly to **both**.
+
+**Where that leaves the diagnosis.** The model is not ignoring terrain and not reading it as a bare
+magnitude. It is using the slope field intensively and still not producing the geographic response
+the thesis predicts: shift the values and the output tracks the *size* of the shift rather than its
+direction. The most defensible reading now is that the network has fitted a narrow joint
+distribution over its inputs and degrades under any departure from it — which is a generalisation
+failure, not an attribution failure, and is consistent with a model that recovers only about a
+fifth of the network to begin with.
+
+**So the next move is Phase 4 quality, not more Phase 5 instrumentation.** Three sweep designs have
+now agreed that this baseline cannot answer the question. The sweep is not the thing that needs
+improving.
+
+---
+
 ## Corrections — things believed and then disproved
 
 Recorded because the wrong version is the intuitive one and will otherwise be re-derived.

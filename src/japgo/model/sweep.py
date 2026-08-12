@@ -97,6 +97,11 @@ class QuantileMap:
     distribution of the mountain valley — does the predicted network become more valley-like?* Every
     value the model sees is one some real tile really had, and the shape of the distribution is
     preserved rather than stretched. There is nothing out-of-distribution left to blame.
+
+    Note what this does **not** change. The map is monotone, so whichever pixel was steepest stays
+    steepest: spatial pattern is preserved exactly and only the marginal distribution moves. It is
+    therefore the complement of :class:`ShuffleChannel`, which keeps the marginal and destroys the
+    pattern. Reading the two together is what separates "uses the values" from "uses the geography".
     """
 
     name: str
@@ -197,6 +202,37 @@ def _predict(model, stack: np.ndarray):
         return torch.sigmoid(logits.float())[0, 0].cpu().numpy()
 
 
+@dataclass(frozen=True)
+class ShuffleChannel:
+    """Scramble a channel's pixels, preserving its histogram exactly and destroying its geography.
+
+    The diagnostic for the magnitude reading. Across three folds the response tracked how far the
+    slope *distribution* moved and not which way, which is what a network reading the channel's
+    histogram rather than its spatial pattern would do. Shuffling separates the two directly: the
+    marginal distribution is untouched to the last pixel, and every trace of where the slopes were
+    is gone.
+
+    **Its expectation is not the project's thesis, it is the hypothesis under test.** A model using
+    terrain geographically should change a great deal when the terrain is scrambled. A model
+    reading only the histogram should not move at all. ``flat`` here therefore means "the magnitude
+    hypothesis is right", which is the opposite of a pass everywhere else in this module — hence
+    the separate class rather than another entry in the table.
+    """
+
+    name: str
+    channel: str
+    expect: dict[str, str]
+    seed: int = 0
+    factor: float = float("nan")
+
+    def apply(self, stack: np.ndarray, index: int, **_) -> tuple[np.ndarray, float]:
+        out = stack.copy()
+        flat = out[index].ravel().copy()
+        np.random.default_rng(self.seed).shuffle(flat)
+        out[index] = flat.reshape(out[index].shape)
+        return out, 0.0
+
+
 FLATTER_EXPECTATION = {
     "road_density_km_per_km2": "up",
     "intersection_density_per_km2": "up",
@@ -218,7 +254,12 @@ def quantile_sweep(references: dict[str, float], held_out_median: float) -> tupl
     steepened the tile and was scored against an expectation it could not meet. The comparison has
     to be against the distribution being replaced, not against the other replacement.
     """
-    out: list = [Perturbation("null", "slope", 1.0, dict.fromkeys(RESPONSES, "flat"))]
+    out: list = [
+        Perturbation("null", "slope", 1.0, dict.fromkeys(RESPONSES, "flat")),
+        # Same histogram, no geography. See ShuffleChannel: 'flat' here means the magnitude
+        # hypothesis holds, not that the model passed.
+        ShuffleChannel("shuffle_slope", "slope", dict.fromkeys(RESPONSES, "flat")),
+    ]
     for site, median in sorted(references.items(), key=lambda kv: kv[1]):
         flatter = median < held_out_median
         out.append(
