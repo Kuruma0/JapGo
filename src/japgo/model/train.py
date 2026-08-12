@@ -54,6 +54,11 @@ class RunConfig:
     seed: int = 0
     dice_weight: float = 1.0
     """Weight on the soft-Dice term. Dice punishes extra painted area, which BCE cannot."""
+    distance_tolerance_px: float = 8.0
+    """Distance over which a false positive ramps to full cost; 0 disables the weighting.
+
+    A hairline target punishes a two-pixel miss as hard as a road in the sea, so the safest thing
+    a network can do is predict less — which is exactly what it did."""
     max_positive_weight: float = 5.0
     """Cap on the BCE positive weight. Was effectively 50; an uncapped 31 drove the over-painting
     that made every junction metric collapse."""
@@ -192,7 +197,7 @@ def train_fold(root: Path, fold: Fold, config: RunConfig, *, out_dir: Path) -> R
     """Train on the fold's training sites and evaluate on the site it holds out."""
     import torch
 
-    from .nets import build_unet, masked_bce, masked_dice
+    from .nets import build_unet, distance_weights, masked_bce, masked_bce_weighted, masked_dice
 
     assert_no_overlap(fold)
 
@@ -240,17 +245,31 @@ def train_fold(root: Path, fold: Fold, config: RunConfig, *, out_dir: Path) -> R
         for start in range(0, len(order) - config.batch + 1, config.batch):
             picks = [train_patches[i] for i in order[start : start + config.batch]]
             xs, ys = zip(*(loader.read(p, config.crop) for p in picks), strict=True)
+            targets = np.stack(ys)[:, target_index : target_index + 1]
             x = torch.from_numpy(np.stack(xs)).to(device)
-            y = torch.from_numpy(np.stack(ys)[:, target_index : target_index + 1]).to(device)
+            y = torch.from_numpy(targets).to(device)
             valid = x[:, -1:, :, :]
+
+            weights = None
+            if config.distance_tolerance_px > 0:
+                weights = torch.from_numpy(
+                    np.stack([
+                        distance_weights(t[0], tolerance_px=config.distance_tolerance_px)
+                        for t in targets
+                    ])[:, None]
+                ).to(device)
 
             optimiser.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=use_amp):
                 logits = model(x)
-                loss = (
-                    masked_bce(logits, y, valid, positive_weight=positive_weight)
-                    + config.dice_weight * masked_dice(logits, y, valid)
+                bce = (
+                    masked_bce_weighted(
+                        logits, y, valid, weights, positive_weight=positive_weight
+                    )
+                    if weights is not None
+                    else masked_bce(logits, y, valid, positive_weight=positive_weight)
                 )
+                loss = bce + config.dice_weight * masked_dice(logits, y, valid)
             scaler.scale(loss).backward()
             scaler.step(optimiser)
             scaler.update()

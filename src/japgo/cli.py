@@ -755,7 +755,13 @@ def evaluate(root, runs_dir):
 @click.option("--threshold", type=float, default=0.5, show_default=True)
 @click.option("--limit", type=int, default=6, show_default=True,
               help="Held-out tiles to sweep. Each perturbation re-predicts every one of them.")
-def sweep(root, checkpoint, threshold, limit):
+@click.option("--mode", type=click.Choice(["quantile", "scale"]), default="quantile",
+              show_default=True,
+              help="quantile swaps a real site's slope distribution in; scale multiplies by a "
+                   "factor, which invents terrain the model never saw.")
+@click.option("--split", "split_path", type=click.Path(path_type=Path),
+              default="data/tiles/split.json", show_default=True)
+def sweep(root, checkpoint, threshold, limit, mode, split_path):
     """Phase 5: does changing the environment change the road network?
 
     The project's actual thesis. Holds the model fixed, perturbs one environmental channel at a
@@ -768,8 +774,9 @@ def sweep(root, checkpoint, threshold, limit):
     import torch
 
     from .model.nets import build_unet
-    from .model.sweep import RESPONSES, run_sweep
+    from .model.sweep import DEFAULT_SWEEP, RESPONSES, quantile_sweep, run_sweep
     from .pipeline.channels import load_stack_spec
+    from .pipeline.splits import SplitDefinition
 
     logging.basicConfig(level=logging.INFO, format="  %(message)s", force=True)
 
@@ -789,13 +796,43 @@ def sweep(root, checkpoint, threshold, limit):
     model.load_state_dict(torch.load(checkpoint, map_location="cpu"))
     model = model.to("cuda" if torch.cuda.is_available() else "cpu")
 
+    site_tiles = None
+    perturbations = DEFAULT_SWEEP
+    if mode == "quantile":
+        if not Path(split_path).is_file():
+            raise click.ClickException(
+                f"quantile mode needs the split at {split_path} to find each site's tiles"
+            )
+        split = SplitDefinition.read(split_path)
+        site_tiles = {name: sorted(s.tiles) for name, s in split.sites.items()}
+        held = cfg["fold"].removeprefix("holdout_")
+        others = [s for s in sorted(site_tiles) if s != held]
+        if len(others) < 2:
+            raise click.ClickException("quantile mode needs two other sites to swap between")
+        # Order by median slope so the labels mean what they say.
+        import numpy as np
+
+        from .model.sweep import reference_values
+
+        index = spec.index_of("slope")
+        medians = {
+            s: float(np.median(reference_values(Path(root), site_tiles[s][:4], index)))
+            for s in others
+        }
+        flatter, steeper = sorted(medians, key=medians.get)
+        click.echo(f"  reference sites: {flatter} (flatter, slope p50 {medians[flatter]:.3f})  "
+                   f"vs {steeper} (steeper, {medians[steeper]:.3f})")
+        perturbations = quantile_sweep(flatter, steeper)
+
     click.secho(f"\nsweep on {cfg['fold']} (held out: {cfg['eval_tiles'][0]} ...)", bold=True)
-    results = run_sweep(Path(root), model, cfg["eval_tiles"], threshold=threshold, limit=limit)
+    results = run_sweep(Path(root), model, cfg["eval_tiles"], threshold=threshold, limit=limit,
+                        perturbations=perturbations, site_tiles=site_tiles)
 
     agreed = total = 0
     for r in results:
-        note = f"  [{r.clamped:.0%} of pixels clamped to the corpus range]" if r.clamped > 0.01 else ""
-        click.secho(f"\n  {r.perturbation}: {r.channel} x{r.factor}  ({r.tiles} tiles)"
+        note = f"  [{r.clamped:.0%} clamped]" if r.clamped > 0.01 else ""
+        how = "quantile-mapped" if r.factor != r.factor else f"x{r.factor}"
+        click.secho(f"\n  {r.perturbation}: {r.channel} {how}  ({r.tiles} tiles)"
                     + note, bold=True)
         for response in RESPONSES:
             got, want = r.direction(response), r.expect.get(response, "?")

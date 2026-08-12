@@ -85,6 +85,46 @@ class Perturbation:
         return out, clamped
 
 
+@dataclass(frozen=True)
+class QuantileMap:
+    """Reshape a channel onto another *real* site's distribution.
+
+    The scaling perturbations could not be made honest. Multiplying slope by 3.0 invents terrain
+    that exists nowhere; clamping it back to the corpus range produces a saturated uniform field,
+    which is no more natural. Both measure how the model behaves on inputs it was never shown.
+
+    Quantile mapping asks the question the thesis actually poses: *give this coastal tile the slope
+    distribution of the mountain valley — does the predicted network become more valley-like?* Every
+    value the model sees is one some real tile really had, and the shape of the distribution is
+    preserved rather than stretched. There is nothing out-of-distribution left to blame.
+    """
+
+    name: str
+    channel: str
+    reference_site: str
+    expect: dict[str, str]
+
+    #: Kept so :class:`SweepResult` can report the two uniformly.
+    factor: float = float("nan")
+
+    def apply(
+        self, stack: np.ndarray, index: int, *, reference: np.ndarray | None = None, **_
+    ) -> tuple[np.ndarray, float]:
+        if reference is None or reference.size == 0:
+            return stack.copy(), 0.0
+
+        out = stack.copy()
+        source = out[index]
+        # Map by rank: a pixel at the 40th percentile of this tile takes the reference's 40th.
+        levels = np.linspace(0.0, 100.0, 256)
+        source_q = np.percentile(source, levels)
+        reference_q = np.percentile(reference, levels)
+        # np.interp needs a strictly increasing x; ties in a flat tile would otherwise break it.
+        source_q = np.maximum.accumulate(source_q + np.arange(source_q.size) * 1e-9)
+        out[index] = np.interp(source, source_q, reference_q).astype(stack.dtype)
+        return out, 0.0
+
+
 #: The sweep as run. Expectations come from site-selection.md and research doc §1.3, both written
 #: before any model existed — which is what makes them predictions rather than rationalisations.
 DEFAULT_SWEEP: tuple[Perturbation, ...] = (
@@ -157,6 +197,37 @@ def _predict(model, stack: np.ndarray):
         return torch.sigmoid(logits.float())[0, 0].cpu().numpy()
 
 
+def quantile_sweep(flatter_site: str, steeper_site: str) -> tuple:
+    """The sweep expressed as swaps between two real sites' slope distributions."""
+    return (
+        Perturbation("null", "slope", 1.0, dict.fromkeys(RESPONSES, "flat")),
+        QuantileMap(
+            f"slope_of_{flatter_site}", "slope", flatter_site,
+            {"road_density_km_per_km2": "up", "intersection_density_per_km2": "up",
+             "sinuosity_median": "down"},
+        ),
+        QuantileMap(
+            f"slope_of_{steeper_site}", "slope", steeper_site,
+            {"road_density_km_per_km2": "down", "intersection_density_per_km2": "down",
+             "sinuosity_median": "up"},
+        ),
+    )
+
+
+def reference_values(root: Path, tile_ids: list[str], index: int, *, cap: int = 2_000_000):
+    """Channel values from a reference site, sampled for the quantile map."""
+    chunks = []
+    for tile_id in tile_ids:
+        b = read_tile(root, tile_id)
+        chunks.append(b.stack[index][b.stack[-1] > 0.5].ravel())
+    if not chunks:
+        return np.empty(0)
+    values = np.concatenate(chunks)
+    if values.size > cap:
+        values = np.random.default_rng(0).choice(values, cap, replace=False)
+    return values
+
+
 def observed_range(bundles, index: int, *, low: float = 1.0, high: float = 99.0):
     """The percentile range a channel occupies across the swept tiles.
 
@@ -178,6 +249,7 @@ def run_sweep(
     threshold: float = 0.5,
     limit: int | None = None,
     in_distribution: bool = True,
+    site_tiles: dict[str, list[str]] | None = None,
 ) -> list[SweepResult]:
     """Perturb, re-predict, extract, and compare structure — one channel at a time."""
     from .extract import ExtractionSpec, extract_graph
@@ -205,9 +277,23 @@ def run_sweep(
         index = spec.index_of(perturbation.channel)
         bounds = observed_range(bundles, index) if in_distribution else None
 
+        extra: dict = {}
+        if isinstance(perturbation, QuantileMap):
+            tiles = (site_tiles or {}).get(perturbation.reference_site)
+            if not tiles:
+                log.warning(
+                    "sweep: no tiles for reference site %r; skipping %s",
+                    perturbation.reference_site, perturbation.name,
+                )
+                continue
+            extra["reference"] = reference_values(root, tiles, index)
+            bounds = None      # the reference *is* the distribution; clamping would distort it
+
         structures, clamps = [], []
         for bundle in bundles:
-            altered, clamped = perturbation.apply(bundle.stack, index, bounds=bounds)
+            altered, clamped = perturbation.apply(
+                bundle.stack, index, bounds=bounds, **extra
+            )
             clamps.append(clamped)
             graph = extract_graph(
                 _predict(model, altered), bundle.tile.read, bundle.manifest.crs,

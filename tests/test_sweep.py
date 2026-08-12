@@ -117,3 +117,45 @@ def test_the_clamped_fraction_is_reported_not_hidden():
                     clamped=0.85)
     assert r.clamped > 0.5
     assert r.direction("a") == "flat"        # and the caller can see why
+
+
+def test_quantile_mapping_gives_a_tile_another_site_s_real_distribution():
+    """The honest counterfactual.
+
+    Scaling could not be made honest: x3 invents terrain that exists nowhere, and clamping it back
+    produces a saturated uniform field. A quantile map shows the model only values some real tile
+    really had, and preserves the shape of the distribution rather than stretching it.
+    """
+    from japgo.model.sweep import QuantileMap
+
+    rng = np.random.default_rng(0)
+    stack = np.zeros((2, 40, 40), dtype=np.float32)
+    stack[0] = rng.uniform(0.0, 0.1, (40, 40))          # flat tile
+    reference = rng.uniform(0.5, 1.0, 20_000)           # steep site
+
+    out, clamped = QuantileMap("x", "slope", "steep", {}).apply(stack, 0, reference=reference)
+
+    assert clamped == 0.0                                # nothing to clamp: all values are real
+    assert np.percentile(out[0], 50) == pytest.approx(np.percentile(reference, 50), abs=0.02)
+    assert np.allclose(out[1], stack[1])                 # one channel at a time, still
+    assert np.allclose(stack[0], rng_check := stack[0])  # source untouched
+
+
+def test_a_quantile_map_without_a_reference_is_a_no_op_not_a_crash():
+    """A reference site with no tiles must skip the perturbation, not corrupt the sweep."""
+    from japgo.model.sweep import QuantileMap
+
+    stack = np.ones((2, 8, 8), dtype=np.float32)
+    out, clamped = QuantileMap("x", "slope", "missing", {}).apply(stack, 0, reference=None)
+    assert np.allclose(out, stack) and clamped == 0.0
+
+
+def test_the_quantile_sweep_keeps_the_null_and_opposes_its_two_arms():
+    from japgo.model.sweep import quantile_sweep
+
+    null, flat_ref, steep_ref = quantile_sweep("hamamatsu_plain", "kawanehon_valley")
+    assert null.factor == 1.0 and set(null.expect.values()) == {"flat"}
+    assert flat_ref.reference_site == "hamamatsu_plain"
+    assert steep_ref.reference_site == "kawanehon_valley"
+    for response in RESPONSES:
+        assert flat_ref.expect[response] != steep_ref.expect[response], response

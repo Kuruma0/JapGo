@@ -12,6 +12,8 @@ gradient checkpointing unspent for the SAM-class route later (§20.2).
 
 from __future__ import annotations
 
+import numpy as np
+
 
 def build_unet(channels: int, *, width: int = 32, outputs: int = 1):
     """Encoder/decoder with skip connections, returning logits.
@@ -54,6 +56,56 @@ def build_unet(channels: int, *, width: int = 32, outputs: int = 1):
             return self.head(x)
 
     return UNet()
+
+
+def distance_weights(
+    target: np.ndarray, *, tolerance_px: float = 8.0, near_weight: float = 0.15
+) -> np.ndarray:
+    """Per-pixel loss weights that soften near-misses, from a distance transform.
+
+    A one-pixel centreline is a brutal target: predicting a road two pixels off its true line
+    scores exactly as badly as predicting one in the sea, so the safest thing a network can do is
+    predict less. That is what the hairline target produced — inflation fell and recall collapsed,
+    and the dense plain fold lost to the prior.
+
+    Weighting by distance restores the ordering the metric actually cares about. A false positive
+    adjacent to the true centreline is very nearly right, and a graph extractor thins it onto the
+    line anyway; one far away is a genuine error. Weight ramps from ``near_weight`` on the line to
+    1.0 at ``tolerance_px``, so both remain penalised — just not equally.
+
+    Positives always weigh 1.0: this softens false positives, it does not excuse missing a road.
+    """
+    from scipy.ndimage import distance_transform_edt
+
+    positive = target > 0.5
+    if not positive.any():
+        return np.ones_like(target, dtype=np.float32)
+
+    distance = distance_transform_edt(~positive)
+    ramp = np.clip(distance / max(tolerance_px, 1e-6), 0.0, 1.0)
+    weights = near_weight + (1.0 - near_weight) * ramp
+    weights[positive] = 1.0
+    return weights.astype(np.float32)
+
+
+def masked_bce_weighted(logits, target, valid, weights, *, positive_weight: float):
+    """BCE over observed pixels, scaled per pixel by ``weights``.
+
+    Separate from :func:`masked_bce` rather than an optional argument, so a run that uses distance
+    weighting is distinguishable in a stack trace and in the config from one that does not.
+    """
+    import torch.nn.functional as F
+
+    mask = (valid > 0.5).float()
+    if mask.sum() == 0:
+        return logits.sum() * 0.0
+
+    loss = F.binary_cross_entropy_with_logits(
+        logits, target, reduction="none",
+        pos_weight=logits.new_tensor(positive_weight),
+    )
+    scaled = loss * weights * mask
+    return scaled.sum() / (weights * mask).sum().clamp_min(1.0)
 
 
 def masked_dice(logits, target, valid, *, eps: float = 1.0):

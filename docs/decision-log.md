@@ -651,6 +651,55 @@ distribution rather than scaling it. That is the next change to the perturbation
 
 ---
 
+## 2026-08-12 — Quantile-mapped sweep: the model responds to slope, backwards
+
+The scaling perturbations could never be made honest — ×3 invents terrain that exists nowhere, and
+clamping it back produces a saturated uniform field. The quantile map removes that objection
+entirely: it gives a held-out Izu tile the **slope distribution of a real site**, value for value,
+preserving distribution shape. Nothing the model sees is out of distribution, so nothing about the
+result can be blamed on that.
+
+Model `holdout_izu_coast`, five held-out coastal tiles, threshold 0.25:
+
+| Slope distribution swapped in | road density | intersections | expected |
+| --- | --- | --- | --- |
+| *(null — unchanged)* | 1.135 → 1.120 | 0.200 → 0.200 | flat ✓ |
+| **Hamamatsu** (flat) | 1.135 → **0.286** | 0.200 → **0.000** | up |
+| **Kawanehon** (steep) | 1.135 → **2.209** | 0.200 → **1.000** | down |
+
+**0/6 in the predicted direction — and that understates it.** The two arms did not fail randomly;
+they moved *cleanly in opposite directions from each other*, which the scaling sweep never managed.
+The model is unmistakably responding to the slope channel. It responds **inverted**: flatter
+terrain produces less road, steeper terrain produces more.
+
+That is the exact opposite of the relationship Phase 3 measured in the same corpus, where slope
+against intersection density runs **rho −0.93 with a bootstrap interval excluding zero**. The data
+says steep ground carries less road. The model, given steep ground, paints more.
+
+**The most likely explanation is magnitude, not geography.** Slope is stored scale-normalised
+(÷50), Kawanehon's values are large, and mapping Izu onto them raises the channel's magnitude
+everywhere. A network keying on activation magnitude rather than on terrain semantics would behave
+exactly like this — more signal in, more road out. The earlier scaling sweep is consistent with the
+same reading once clamping is accounted for.
+
+**This is risk R2, caught by the only instrument that could catch it.** Every prior measurement
+was compatible with a model that had learned terrain properly: it beat the priors on three
+archetypes, and the flat-only control failed where flat-plus-steep succeeded. That control shows
+terrain in *training* changes what the model learns — it does not show the model learned the right
+relationship. The sweep separates those two claims, and the answer is that it did not.
+
+**What this does not mean.** It is one model, one fold, five tiles, and a model already known to
+recover only about a fifth of the network. It is not a refutation of the project's thesis — the
+thesis is about what the data contains, and Phase 3 supports it at 44 associations. It is a
+refutation of *this baseline's* claim to have learned it.
+
+**Next.** Re-run the sweep on the other two folds to see whether inversion is general or specific
+to this one; check whether it survives the distance-weighted loss now implemented; and test the
+magnitude hypothesis directly by mapping onto a *shuffled* distribution with the same marginal —
+if the response tracks the mean rather than the spatial pattern, that is the answer.
+
+---
+
 ## Corrections — things believed and then disproved
 
 Recorded because the wrong version is the intuitive one and will otherwise be re-derived.

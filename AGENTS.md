@@ -32,7 +32,7 @@ The control that matters, and it survives every change so far: trained on the fl
 model *loses* to the prior on the mountain valley; trained on flat **and** steep it wins. Same
 site, same seed. The model responds to environment, not just to built form.
 
-Done (413 tests):
+Done (416 tests):
 
 | Package | Contents |
 | --- | --- |
@@ -62,13 +62,18 @@ Next: **a soft centreline target, then re-run the sweep**. Neither target is rig
 over-paints, hairline under-detects. Distance-transform weighting, so a near-miss is penalised in
 proportion to distance, is what the original note proposed and what stack v2 only half-implemented.
 
-The Phase 5 harness works (`japgo sweep`), null control clean, perturbations now clamped to the
-corpus range. It scores 3/9 — but read the clamp column, not the score: **flatten clamps only 8% of
-pixels and still collapses road density by 89%**, so the model is *brittle* to the slope channel
-rather than responsive to it. Clamping has its own artefact (66% clamped on steepen means a
-saturated uniform field); the next design is a **quantile map** onto another real site's slope
-distribution. And the sweep cannot say much through a model recovering ~a fifth of the network —
-Phase 4 quality gates Phase 5 in practice, not just on paper.
+**The sweep has produced its first real answer, and it is negative.** `japgo sweep --mode
+quantile` gives a held-out tile another real site's slope distribution, value for value — nothing
+out of distribution left to blame. The model responds to slope **cleanly and backwards**: give Izu
+Hamamatsu's flat terrain and predicted road density *falls* 1.135 → 0.286; give it Kawanehon's
+steep terrain and it *rises* to 2.209. That inverts the relationship Phase 3 measured in the same
+corpus (slope vs intersection density, rho −0.93).
+
+This is **risk R2, caught by the only instrument that could catch it**. Beating the priors on three
+archetypes was compatible with a model that had learned terrain properly; the sweep shows this one
+did not. Most likely magnitude, not geography — slope is scale-normalised, and a network keying on
+activation magnitude behaves exactly like this. Do not read Phase 4's pass as evidence the model
+uses terrain correctly.
 
 Before trusting Phase 3's ranking as an attribution, note that the terrain predictors are collinear
 (slope/relief/roughness rank together). Use `--scheme loso`, not the configured single-site split —
