@@ -698,6 +698,56 @@ def train(root, split_path, scheme, epochs, batch, crop, width, seed, dice_weigh
         click.secho(f"\n{cleared}/{len(results)} fold(s) beat both priors", bold=True)
 
 
+@main.command("evaluate")
+@click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
+@click.option("--runs", "runs_dir", type=click.Path(path_type=Path), default="runs",
+              show_default=True, help="Directory of *.config.json / *.pt from `japgo train`.")
+def evaluate(root, runs_dir):
+    """Score saved checkpoints without retraining them.
+
+    Evaluation is deterministic given a fixed checkpoint, so this recovers exactly the figures a
+    run printed — a lost log no longer costs a retrain.
+    """
+    import logging
+
+    from .model.train import evaluate_checkpoint
+
+    logging.basicConfig(level=logging.INFO, format="  %(message)s", force=True)
+
+    configs = sorted(Path(runs_dir).glob("*.config.json"))
+    if not configs:
+        raise click.ClickException(f"no run configs under {runs_dir}")
+
+    cleared = 0
+    for config in configs:
+        click.secho(f"\n{config.stem.replace('.config','')}", bold=True)
+        try:
+            r = evaluate_checkpoint(Path(root), config)
+        except (ValueError, FileNotFoundError) as exc:
+            click.secho(f"  skipped: {exc}", fg="yellow")
+            continue
+
+        click.echo(f"  model            {r.model['f1']:.3f} F1  "
+                   f"(P {r.model['precision']:.3f} R {r.model['recall']:.3f})")
+        click.echo(f"  prior: built     {r.built['f1']:.3f} F1")
+        if r.topology:
+            tp = r.topology
+            click.echo(f"  graph            APLS {tp['apls']:.3f}  TOPO F1 {tp['topo_f1']:.3f}")
+            click.echo(f"  nodes            {tp['predicted_nodes']} predicted vs "
+                       f"{tp['truth_nodes']} real, per tile")
+            if tp.get("prior"):
+                pp = tp["prior"]
+                click.echo(f"  graph prior      APLS {pp['apls']:.3f}  "
+                           f"TOPO F1 {pp['topo_f1']:.3f}  ({pp['predicted_nodes']} nodes)")
+                won = tp["apls"] > pp["apls"] and tp["topo_f1"] > pp["topo_f1"]
+                cleared += won
+                click.secho("  topology         " + ("beats the prior on APLS and TOPO"
+                                                     if won else "DOES NOT beat the prior"),
+                            fg="green" if won else "red")
+
+    click.secho(f"\n{cleared}/{len(configs)} checkpoint(s) beat the prior on topology", bold=True)
+
+
 @main.command("sweep")
 @click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
 @click.option("--checkpoint", type=click.Path(path_type=Path), required=True,

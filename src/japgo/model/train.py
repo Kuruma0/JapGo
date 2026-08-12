@@ -93,6 +93,92 @@ class Result:
         return "FAIL - does not beat the constant prior"
 
 
+def road_rate_from_tiles(root: Path, tile_ids: list[str], *, target_index: int) -> float:
+    """Road fraction over whole training tiles.
+
+    The patch-wise version in :mod:`~japgo.model.baseline` re-reads every crop, which is the right
+    thing during training because the sampler already has them in hand. For scoring a checkpoint
+    after the fact it is minutes of work for a number that whole tiles give in seconds, and the two
+    agree to well within the precision the constant prior needs.
+    """
+    from ..pipeline.store import read_tile
+
+    positives = total = 0
+    for tile_id in tile_ids:
+        bundle = read_tile(root, tile_id)
+        if bundle.targets is None:
+            continue
+        valid = bundle.channel("valid") > 0.5
+        positives += int(np.count_nonzero((bundle.targets[target_index] > 0.5) & valid))
+        total += int(np.count_nonzero(valid))
+    return positives / total if total else 0.0
+
+
+def evaluate_checkpoint(
+    root: Path, config_path: Path, *, seed: int | None = None
+) -> Result:
+    """Score a saved checkpoint without retraining it.
+
+    Training and scoring were coupled, so a lost log meant a lost run — two and a half hours to
+    recover a number the model had already produced. Evaluation is deterministic given a fixed
+    checkpoint, so separating them recovers the exact figures, and the sweep needs a load path
+    regardless.
+    """
+    import torch
+
+    from .nets import build_unet
+
+    config_path = Path(config_path)
+    cfg = json.loads(config_path.read_text())
+    spec = load_stack_spec()
+
+    if cfg.get("stack_version") not in (None, spec.stack_version):
+        raise ValueError(
+            f"{config_path.name} was trained on stack v{cfg['stack_version']} but the corpus is "
+            f"v{spec.stack_version}; the channels no longer mean the same thing"
+        )
+    if cfg.get("registry") not in (None, registry_hash()):
+        log.warning(
+            "%s was trained under registry %s, corpus is now %s",
+            config_path.name, cfg.get("registry"), registry_hash(),
+        )
+
+    fold = Fold(
+        name=cfg["fold"], train_sites=(), held_out=cfg["fold"].removeprefix("holdout_"),
+        train_tiles=cfg["train_tiles"], eval_tiles=cfg["eval_tiles"],
+    )
+    assert_no_overlap(fold)
+
+    checkpoint = config_path.with_name(config_path.name.replace(".config.json", ".pt"))
+    model = build_unet(spec.depth, width=cfg.get("width", 32))
+    model.load_state_dict(torch.load(checkpoint, map_location="cpu"))
+    model = model.to("cuda" if torch.cuda.is_available() else "cpu")
+
+    target_index = spec.target_index_of(ROAD_TARGET)
+    rate = road_rate_from_tiles(root, fold.train_tiles, target_index=target_index)
+    config = RunConfig(**{k: v for k, v in cfg.items() if k in RunConfig.__dataclass_fields__})
+
+    scores = evaluate_fold(root, fold, model, config, rate=rate, target_index=target_index)
+    topology = topology_of(
+        root, fold, scores.pop("_rasters"),
+        threshold=scores["model"].threshold,
+        prior_threshold=scores["built"].threshold,
+        seed=cfg.get("seed", 0) if seed is None else seed,
+    )
+    return Result(
+        fold=fold.name,
+        held_out=fold.held_out,
+        model=asdict(scores["model"]),
+        constant=asdict(scores["constant"]),
+        built=asdict(scores["built"]),
+        train_patches=0,
+        eval_tiles=len(fold.eval_tiles),
+        epochs=cfg.get("epochs", 0),
+        seconds=0.0,
+        topology=topology,
+    )
+
+
 def folds_for(split: SplitDefinition, *, scheme: str) -> list[Fold]:
     """``configured`` for the split as written, ``loso`` to rotate the held-out site."""
     if scheme == "configured":

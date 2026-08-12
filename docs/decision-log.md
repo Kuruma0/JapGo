@@ -533,6 +533,96 @@ wide, distance-transform weighted — attacks the cause rather than the symptom.
 
 ---
 
+## 2026-08-12 — The centreline target fixed inflation and did not fix APLS
+
+The hypothesis was explicit: junction inflation was the binding constraint on APLS, inflation came
+from training against a carriageway-width target, so a hairline target should lift topology.
+Stack v2 added `road_centreline`, the model trained on it, and the intervention worked *on its
+target* — and the hypothesis was still wrong.
+
+| Held out | inflation | APLS | TOPO F1 | vs prior |
+| --- | --- | --- | --- | --- |
+| hamamatsu_plain | 4.1× → **1.45×** | 0.187 → **0.047** | 0.250 → 0.135 | PASS → **FAIL** |
+| izu_coast | 2.3× → **1.76×** | 0.075 → 0.038 | 0.403 → 0.312 | PASS → PASS |
+| kawanehon_valley | 4.1× → **2.00×** | 0.015 → **0.022** | 0.415 → 0.366 | PASS → PASS |
+
+**Inflation improved on 3/3 — nearly to parity on the dense plain — and APLS improved on 1/3.**
+Phase 4's criterion went from 3/3 to **2/3**: Hamamatsu now loses to the built-proximity prior on
+both topology metrics.
+
+**What this falsifies.** Junction count was a symptom, not the cause. A network can have close to
+the right number of junctions and still route nothing like the real one, because APLS depends on
+junctions being in the *right places* and connected in the right order. Cutting excess nodes
+without improving placement moved the count and not the routes. Two earlier entries here reasoned
+that inflation was what held APLS down; that reasoning was wrong and this is the measurement that
+shows it.
+
+**Why the dense plain suffered most.** A hairline target makes the positive class rarer still, and
+Hamamatsu is the fold trained on two sparse steep sites and evaluated on a dense flat one. Recall
+fell to 0.327 with precision 0.133 — the model now under-detects a dense network rather than
+over-painting a sparse one. The centreline target trades one failure mode for its opposite, and
+which one you get depends on the density gap between training and evaluation.
+
+**Confound, stated rather than buried.** The corpus was rebuilt from scratch for stack v2 and is
+**74 tiles, not 81** — the earlier count included leftovers from wider extents since narrowed, so
+Izu is 22 tiles rather than 25 and Kawanehon 26 rather than 30. The v2→v3 comparison is therefore
+not strictly like-for-like. The inflation change is far too large to be explained by it; the APLS
+movements are not.
+
+**Where this leaves Phase 4.** The criterion is met on 2/3 folds rather than 3/3, so the honest
+statement is that it is no longer cleanly met. Neither the width target nor the hairline is right:
+one over-paints, the other under-detects. The next thing to try is a *soft* target — a centreline
+with distance-transform weighting so near-misses are penalised in proportion to distance — which
+is what the original note proposed and what was only half-implemented here.
+
+**Process note.** Training and evaluation were coupled, so a lost session log cost the numbers from
+a completed run. `japgo evaluate` now scores a saved checkpoint without retraining; evaluation is
+deterministic given fixed weights, so it recovers the exact figures. That should have been the
+shape from the start.
+
+---
+
+## 2026-08-12 — First sensitivity sweep: the harness works, the experiment does not
+
+Phase 5's sweep ran end to end on the `holdout_izu_coast` model over five held-out tiles. The
+headline number is **2/9 responses in the predicted direction**, and that number should not be
+read as a verdict on the thesis. The experiment is not yet testing it.
+
+| Perturbation | road density | intersection density | sinuosity |
+| --- | --- | --- | --- |
+| null ×1.0 | 1.135 → 1.135 | 0.200 → 0.200 | 1.047 → 1.047 |
+| flatten ×0.25 | 1.135 → 0.134 (expected **up**) | 0.200 → 0.000 (expected up) | flat |
+| steepen ×3.0 | 1.135 → 0.492 (expected down ✓) | flat | flat |
+| unbuild ×0.0 | 1.135 → 1.135 (expected down) | flat | flat |
+
+**The null control is exactly flat**, which is what it is there for: the responses below are not
+inference nondeterminism.
+
+**The diagnostic is that flatten and steepen move the same way.** Both reduce predicted road
+density. A model responding to terrain the way the thesis claims would move them in *opposite*
+directions — that is precisely why the sweep table declares opposite expectations for the two. One
+signature explains it: multiplying slope by 0.25 or 3.0 produces terrain that exists nowhere in
+training (×3 puts much of a steep tile past 150% grade), so the network is being asked about
+inputs off its distribution and degrades in the only direction it can — predicting less of
+everything. **That measures out-of-distribution robustness, not environmental response.**
+
+**A perturbation must stay in distribution to be a counterfactual.** The fix is to perturb within
+the range the corpus actually contains — swap terrain between real tiles, or rescale slope to
+another site's observed distribution rather than by an arbitrary factor. That is a change to the
+perturbation table, not to the harness.
+
+**Two secondary findings.** Zeroing `landuse_built` changed nothing at all, which is weaker
+evidence than it looks: Izu's built fraction is low, so there was little to remove — it needs
+re-testing on Hamamatsu. And the extracted baseline network is very sparse, **1.135 km/km² against
+roughly 5 for real Izu**, so the sweep is reading structure off a network the v3 model
+substantially under-detects.
+
+**Which puts the blocker back in Phase 4.** The sweep cannot say much through a model that
+recovers a fifth of the network, whatever the perturbation design. Phase 4 quality gates Phase 5
+in practice as well as on paper, exactly as the roadmap claims.
+
+---
+
 ## Corrections — things believed and then disproved
 
 Recorded because the wrong version is the intuitive one and will otherwise be re-derived.

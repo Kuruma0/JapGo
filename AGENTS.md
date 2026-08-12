@@ -22,10 +22,11 @@ ground carries less road and fewer intersections; greater relief makes roads win
 U-Net beats the non-learned prior on **APLS and TOPO across 3/3 leave-one-site-out folds**, each
 evaluated on an archetype it never saw — the phase's actual exit criterion, met narrowly.
 
-Met, and still weak. After the Dice/cleanup pass, APLS runs 0.015–0.187 and junction inflation is
-**2.3–4.1×** (was 4.6–8.6×). Two of three folds improved on every axis; Kawanehon's pixel F1 rose
-by half. Do not read structural numbers as settled — inflation has to fall further before APLS
-responds on sparse networks.
+**No longer cleanly met.** The centreline target (stack v2) cut junction inflation to 1.45–2.0×
+from 4.1× — and APLS did *not* follow, falling on two folds and costing Hamamatsu its pass. The
+criterion now holds on **2/3**. Junction count was a symptom: a network can have nearly the right
+number of junctions and still route nothing like the real one. Corpus is **74 tiles** after the
+v2 rebuild.
 
 The control that matters: trained on the flat plain alone it scores APLS 0.005 on the mountain
 valley and *loses* to the prior; trained on flat *and* steep it scores 0.015 and wins. Same site,
@@ -57,11 +58,15 @@ the wheel still ships gfx1030 kernels before taking one.
 Session transcripts do not travel between machines. [docs/decision-log.md](docs/decision-log.md)
 records what happened when the reasoning met real data — read it alongside the research document.
 
-Next: **a centreline target, then Phase 5**. The remaining width problem is a target problem, not
-a loss problem — road targets are rasterised at carriageway width, so the model correctly learns to
-paint a 5 m band that thins into a ladder rather than a line. A one-pixel centreline target with
-distance-transform weighting attacks the cause. Only then is the sensitivity sweep worth running:
-it measures how road *structure* responds to environment, and structure means the extracted graph.
+Next: **a soft centreline target, then re-run the sweep**. Neither target is right — width
+over-paints, hairline under-detects. Distance-transform weighting, so a near-miss is penalised in
+proportion to distance, is what the original note proposed and what stack v2 only half-implemented.
+
+The Phase 5 harness works (`japgo sweep`) and its null control is clean, but its perturbations are
+out of distribution: ×0.25 and ×3.0 slope both *reduce* predicted road, which is the signature of a
+model asked about terrain it has never seen. Perturb within the corpus's observed range instead.
+And the sweep cannot say much through a model recovering ~a fifth of the network — Phase 4 quality
+gates Phase 5 in practice, not just on paper.
 
 Before trusting Phase 3's ranking as an attribution, note that the terrain predictors are collinear
 (slope/relief/roughness rank together). Use `--scheme loso`, not the configured single-site split —
