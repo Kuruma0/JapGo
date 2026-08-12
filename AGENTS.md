@@ -32,7 +32,7 @@ The control that matters, and it survives every change so far: trained on the fl
 model *loses* to the prior on the mountain valley; trained on flat **and** steep it wins. Same
 site, same seed. The model responds to environment, not just to built form.
 
-Done (411 tests):
+Done (413 tests):
 
 | Package | Contents |
 | --- | --- |
@@ -62,11 +62,13 @@ Next: **a soft centreline target, then re-run the sweep**. Neither target is rig
 over-paints, hairline under-detects. Distance-transform weighting, so a near-miss is penalised in
 proportion to distance, is what the original note proposed and what stack v2 only half-implemented.
 
-The Phase 5 harness works (`japgo sweep`) and its null control is clean, but its perturbations are
-out of distribution: ×0.25 and ×3.0 slope both *reduce* predicted road, which is the signature of a
-model asked about terrain it has never seen. Perturb within the corpus's observed range instead.
-And the sweep cannot say much through a model recovering ~a fifth of the network — Phase 4 quality
-gates Phase 5 in practice, not just on paper.
+The Phase 5 harness works (`japgo sweep`), null control clean, perturbations now clamped to the
+corpus range. It scores 3/9 — but read the clamp column, not the score: **flatten clamps only 8% of
+pixels and still collapses road density by 89%**, so the model is *brittle* to the slope channel
+rather than responsive to it. Clamping has its own artefact (66% clamped on steepen means a
+saturated uniform field); the next design is a **quantile map** onto another real site's slope
+distribution. And the sweep cannot say much through a model recovering ~a fifth of the network —
+Phase 4 quality gates Phase 5 in practice, not just on paper.
 
 Before trusting Phase 3's ranking as an attribution, note that the terrain predictors are collinear
 (slope/relief/roughness rank together). Use `--scheme loso`, not the configured single-site split —

@@ -56,10 +56,33 @@ class Perturbation:
     expect: dict[str, str]
     """Response name -> ``"up"``, ``"down"`` or ``"flat"``, fixed in advance."""
 
-    def apply(self, stack: np.ndarray, index: int) -> np.ndarray:
+    def apply(
+        self, stack: np.ndarray, index: int, *, bounds: tuple[float, float] | None = None
+    ) -> tuple[np.ndarray, float]:
+        """Return the perturbed stack and the fraction of pixels the bounds had to clamp.
+
+        ``bounds`` is the range the channel actually takes across the corpus. Without it the first
+        sweep multiplied slope by 3.0 and produced terrain steeper than anything in training, so
+        the model degraded rather than responded — flatten and steepen both *reduced* predicted
+        road density, when the whole design declares them opposite. That measures out-of-
+        distribution robustness, not environmental response.
+
+        Clamping keeps the counterfactual answerable. The clamped fraction is returned rather than
+        hidden, because a perturbation that clamps most of the tile has been neutered and the
+        result should say so.
+        """
         out = stack.copy()
-        out[index] = np.clip(out[index] * self.factor, 0.0, None)
-        return out
+        altered = out[index] * self.factor
+
+        clamped = 0.0
+        if bounds is not None:
+            low, high = bounds
+            outside = (altered < low) | (altered > high)
+            clamped = float(outside.mean())
+            altered = np.clip(altered, low, high)
+
+        out[index] = np.clip(altered, 0.0, None)
+        return out, clamped
 
 
 #: The sweep as run. Expectations come from site-selection.md and research doc §1.3, both written
@@ -93,6 +116,11 @@ class SweepResult:
     perturbed: dict[str, float]
     expect: dict[str, str]
     tiles: int = 0
+    clamped: float = 0.0
+    """Mean fraction of pixels pushed outside the corpus range and clipped back.
+
+    Read it before reading the directions: above roughly a third, the perturbation has been
+    neutered by the bounds and a 'flat' response means the input barely moved."""
     notes: list[str] = field(default_factory=list)
 
     def direction(self, response: str, *, tolerance: float = 0.05) -> str:
@@ -129,6 +157,18 @@ def _predict(model, stack: np.ndarray):
         return torch.sigmoid(logits.float())[0, 0].cpu().numpy()
 
 
+def observed_range(bundles, index: int, *, low: float = 1.0, high: float = 99.0):
+    """The percentile range a channel occupies across the swept tiles.
+
+    Percentiles rather than min/max so a single outlier pixel cannot licence a perturbation the
+    corpus does not support.
+    """
+    values = np.concatenate([b.stack[index][b.stack[-1] > 0.5].ravel() for b in bundles])
+    if values.size == 0:
+        return None
+    return float(np.percentile(values, low)), float(np.percentile(values, high))
+
+
 def run_sweep(
     root: Path,
     model,
@@ -137,6 +177,7 @@ def run_sweep(
     perturbations: tuple[Perturbation, ...] = DEFAULT_SWEEP,
     threshold: float = 0.5,
     limit: int | None = None,
+    in_distribution: bool = True,
 ) -> list[SweepResult]:
     """Perturb, re-predict, extract, and compare structure — one channel at a time."""
     from .extract import ExtractionSpec, extract_graph
@@ -162,10 +203,12 @@ def run_sweep(
             log.warning("sweep: no channel %r in the stack; skipping", perturbation.channel)
             continue
         index = spec.index_of(perturbation.channel)
+        bounds = observed_range(bundles, index) if in_distribution else None
 
-        structures = []
+        structures, clamps = [], []
         for bundle in bundles:
-            altered = perturbation.apply(bundle.stack, index)
+            altered, clamped = perturbation.apply(bundle.stack, index, bounds=bounds)
+            clamps.append(clamped)
             graph = extract_graph(
                 _predict(model, altered), bundle.tile.read, bundle.manifest.crs,
                 spec=extraction, tile_id=bundle.tile.id,
@@ -181,6 +224,7 @@ def run_sweep(
                 perturbed=_mean(structures),
                 expect=perturbation.expect,
                 tiles=len(bundles),
+                clamped=float(np.mean(clamps)) if clamps else 0.0,
             )
         )
     return results

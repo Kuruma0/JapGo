@@ -621,6 +621,34 @@ substantially under-detects.
 recovers a fifth of the network, whatever the perturbation design. Phase 4 quality gates Phase 5
 in practice as well as on paper, exactly as the roadmap claims.
 
+### Second attempt: clamped to the observed range, and the diagnosis sharpens
+
+Perturbations are now held inside the corpus's own 1–99th percentile range for the channel, and
+the clamped fraction is reported. Score moved 2/9 → **3/9** — and the clamp figures say more than
+the score:
+
+| Perturbation | clamped | road density | verdict |
+| --- | --- | --- | --- |
+| null ×1.0 | 2% | 1.135 → 1.120 | flat ✓ |
+| flatten ×0.25 | **8%** | 1.135 → **0.123** | down, expected up |
+| steepen ×3.0 | **66%** | 1.135 → 0.385 | down ✓ |
+
+**Flatten clamps only 8% of pixels and still collapses road density by 89%.** That kills the
+out-of-distribution explanation on its own: this perturbation stays almost entirely inside the
+range the model trained on, and the network still falls apart. Meanwhile steepen clamps 66%, so it
+barely perturbs anything in most places, and produces a smaller change.
+
+So the model is **brittle to the slope channel rather than responsive to it** — it depends on the
+particular slope values it saw, and any shift degrades the output in the same direction. That is
+not risk R2 ("learns texture, ignores terrain"); it is closer to its mirror image, and the sweep
+is the only instrument that would have distinguished them.
+
+**Clamping introduces its own artefact** and should not be treated as the fix. Clipping 66% of a
+tile to one ceiling value produces a saturated, uniform slope field, which is no more natural than
+the unclamped version. The right perturbation is a **quantile map** — reshape one tile's slope
+distribution onto another real site's observed distribution, preserving the shape of the
+distribution rather than scaling it. That is the next change to the perturbation table.
+
 ---
 
 ## Corrections — things believed and then disproved

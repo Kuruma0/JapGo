@@ -76,7 +76,7 @@ def test_the_score_counts_only_agreement_with_the_declared_direction():
 def test_a_perturbation_changes_one_channel_and_leaves_the_rest_alone():
     """One at a time, or the response cannot be attributed."""
     stack = np.ones((4, 8, 8), dtype=np.float32)
-    altered = Perturbation("x", "slope", 3.0, {}).apply(stack, 1)
+    altered, _ = Perturbation("x", "slope", 3.0, {}).apply(stack, 1)
 
     assert np.allclose(altered[1], 3.0)
     for other in (0, 2, 3):
@@ -86,6 +86,34 @@ def test_a_perturbation_changes_one_channel_and_leaves_the_rest_alone():
 
 def test_a_perturbation_cannot_drive_a_channel_negative():
     stack = np.full((2, 4, 4), 0.5, dtype=np.float32)
-    zeroed = Perturbation("unbuild", "landuse_built", 0.0, {}).apply(stack, 0)
+    zeroed, _ = Perturbation("unbuild", "landuse_built", 0.0, {}).apply(stack, 0)
     assert np.allclose(zeroed[0], 0.0)
     assert zeroed.min() >= 0.0
+
+
+def test_a_perturbation_is_held_inside_the_corpus_range():
+    """The defect the first sweep exposed.
+
+    Multiplying slope by 3.0 produced terrain steeper than anything in training, so the model
+    degraded rather than responded — flatten and steepen both reduced predicted road density when
+    the design declares them opposite. Out-of-distribution robustness is not environmental
+    response, and clamping is what keeps the counterfactual answerable.
+    """
+    stack = np.zeros((2, 4, 4), dtype=np.float32)
+    stack[0] = 0.4
+
+    free, no_clamp = Perturbation("steepen", "slope", 3.0, {}).apply(stack, 0)
+    held, clamped = Perturbation("steepen", "slope", 3.0, {}).apply(stack, 0, bounds=(0.0, 0.6))
+
+    assert free.max() == pytest.approx(1.2) and no_clamp == 0.0
+    assert held.max() == pytest.approx(0.6)
+    assert clamped == pytest.approx(1.0)     # every pixel had to be pulled back
+
+
+def test_the_clamped_fraction_is_reported_not_hidden():
+    """A perturbation that clamps most of the tile has been neutered, and a 'flat' response then
+    means the input barely moved — the reader has to be able to tell those apart."""
+    r = SweepResult("steepen", "slope", 3.0, {"a": 1.0}, {"a": 1.0}, {"a": "up"}, tiles=2,
+                    clamped=0.85)
+    assert r.clamped > 0.5
+    assert r.direction("a") == "flat"        # and the caller can see why

@@ -794,7 +794,9 @@ def sweep(root, checkpoint, threshold, limit):
 
     agreed = total = 0
     for r in results:
-        click.secho(f"\n  {r.perturbation}: {r.channel} x{r.factor}  ({r.tiles} tiles)", bold=True)
+        note = f"  [{r.clamped:.0%} of pixels clamped to the corpus range]" if r.clamped > 0.01 else ""
+        click.secho(f"\n  {r.perturbation}: {r.channel} x{r.factor}  ({r.tiles} tiles)"
+                    + note, bold=True)
         for response in RESPONSES:
             got, want = r.direction(response), r.expect.get(response, "?")
             ok = r.agrees(response)
