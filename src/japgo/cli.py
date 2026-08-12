@@ -819,10 +819,13 @@ def sweep(root, checkpoint, threshold, limit, mode, split_path):
             s: float(np.median(reference_values(Path(root), site_tiles[s][:4], index)))
             for s in others
         }
-        flatter, steeper = sorted(medians, key=medians.get)
-        click.echo(f"  reference sites: {flatter} (flatter, slope p50 {medians[flatter]:.3f})  "
-                   f"vs {steeper} (steeper, {medians[steeper]:.3f})")
-        perturbations = quantile_sweep(flatter, steeper)
+        # Expectations are set against the held-out site's own slope, not against the other
+        # reference: sweeping the flattest site, *both* references are steeper than home.
+        home = float(np.median(reference_values(Path(root), cfg["eval_tiles"][:4], index)))
+        click.echo(f"  held out slope p50 {home:.3f}; references " + ", ".join(
+            f"{s} {m:.3f} ({'flatter' if m < home else 'steeper'})" for s, m in medians.items()
+        ))
+        perturbations = quantile_sweep(medians, home)
 
     click.secho(f"\nsweep on {cfg['fold']} (held out: {cfg['eval_tiles'][0]} ...)", bold=True)
     results = run_sweep(Path(root), model, cfg["eval_tiles"], threshold=threshold, limit=limit,

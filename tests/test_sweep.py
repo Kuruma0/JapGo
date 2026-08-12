@@ -153,9 +153,31 @@ def test_a_quantile_map_without_a_reference_is_a_no_op_not_a_crash():
 def test_the_quantile_sweep_keeps_the_null_and_opposes_its_two_arms():
     from japgo.model.sweep import quantile_sweep
 
-    null, flat_ref, steep_ref = quantile_sweep("hamamatsu_plain", "kawanehon_valley")
+    # Held-out slope 0.8 sits between the two references, so one arm flattens and one steepens.
+    null, flat_ref, steep_ref = quantile_sweep(
+        {"hamamatsu_plain": 0.07, "kawanehon_valley": 1.45}, held_out_median=0.8
+    )
     assert null.factor == 1.0 and set(null.expect.values()) == {"flat"}
     assert flat_ref.reference_site == "hamamatsu_plain"
     assert steep_ref.reference_site == "kawanehon_valley"
     for response in RESPONSES:
         assert flat_ref.expect[response] != steep_ref.expect[response], response
+
+
+def test_expectations_are_set_against_home_not_against_the_other_reference():
+    """The defect the three-fold sweep exposed.
+
+    Ranking the two references against each other calls the lower one "flatten" even when it is
+    steeper than the site being swept. Sweeping the Hamamatsu plain, both references are steeper
+    than home, so the arm labelled flatten in fact steepened the tile and was scored against an
+    expectation it could not meet.
+    """
+    from japgo.model.sweep import quantile_sweep
+
+    _, first, second = quantile_sweep(
+        {"izu_coast": 1.21, "kawanehon_valley": 1.45}, held_out_median=0.07
+    )
+    # Home is flatter than both, so *both* arms steepen and both carry the steeper expectation.
+    for arm in (first, second):
+        assert arm.expect["road_density_km_per_km2"] == "down"
+        assert arm.expect["sinuosity_median"] == "up"

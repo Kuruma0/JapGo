@@ -672,6 +672,10 @@ they moved *cleanly in opposite directions from each other*, which the scaling s
 The model is unmistakably responding to the slope channel. It responds **inverted**: flatter
 terrain produces less road, steeper terrain produces more.
 
+> **Superseded the same day.** Running the other two folds showed this was not inversion — see the
+> three-fold entry below. Izu happened to have one near reference and one far, and the pattern that
+> looked like direction was magnitude.
+
 That is the exact opposite of the relationship Phase 3 measured in the same corpus, where slope
 against intersection density runs **rho −0.93 with a bootstrap interval excluding zero**. The data
 says steep ground carries less road. The model, given steep ground, paints more.
@@ -697,6 +701,50 @@ refutation of *this baseline's* claim to have learned it.
 to this one; check whether it survives the distance-weighted loss now implemented; and test the
 magnitude hypothesis directly by mapping onto a *shuffled* distribution with the same marginal —
 if the response tracks the mean rather than the spatial pattern, that is the answer.
+
+---
+
+## 2026-08-12 — All three folds swept: it is magnitude, not direction
+
+Running the quantile sweep on the remaining two folds overturns the single-fold reading. Ordered by
+how far the slope distribution was moved, every fold and both directions:
+
+| Held out | slope swap | \|change\| | direction | road density | moved |
+| --- | --- | --- | --- | --- | --- |
+| hamamatsu | 0.07 → 1.45 (kawanehon) | 1.38 | steeper | 6.67 → 1.27 | **down** |
+| kawanehon | 1.45 → 0.07 (hamamatsu) | 1.38 | flatter | 1.57 → 0.33 | **down** |
+| izu | 1.21 → 0.07 (hamamatsu) | 1.14 | flatter | 1.14 → 0.29 | **down** |
+| hamamatsu | 0.07 → 1.21 (izu) | 1.14 | steeper | 6.67 → 1.30 | **down** |
+| izu | 1.21 → 1.45 (kawanehon) | 0.24 | steeper | 1.14 → 2.21 | **up** |
+| kawanehon | 1.45 → 1.21 (izu) | 0.24 | flatter | 1.57 → 1.93 | **up** |
+
+**The size of the change predicts the response perfectly; the direction predicts nothing.** All
+four large swaps reduce road density — two of them steeper, two flatter. Both small swaps raise it —
+one steeper, one flatter. Six for six on magnitude, three for six on direction, which is chance.
+
+**This corrects the previous entry.** One fold looked like clean inversion because Izu happens to
+sit near Kawanehon and far from Hamamatsu, so its two arms differed in distance as well as in
+direction. With all three folds the confound separates, and what remains is not a model that has
+learned the relationship backwards. It is a model whose slope channel is **a magnitude input, not a
+terrain input**: move the distribution far in any direction and the prediction collapses; nudge it
+slightly and the prediction grows.
+
+**A defect in the sweep, found the same way.** `quantile_sweep` ranked the two reference sites
+against *each other* and called the lower one "flatten". Sweeping the Hamamatsu plain, both
+references are steeper than home — so the arm labelled "flatten" in fact steepened the tile and was
+scored against an expectation it could not meet. Expectations are now set against the held-out
+site's own median. That is why the Hamamatsu fold appeared to score 2/6: one of its "correct"
+answers was correct by mislabelling.
+
+**What is now established, and what is not.** Established: this baseline does not use terrain the
+way the thesis requires, on any fold, under a perturbation with no out-of-distribution excuse left.
+Not established: anything about whether the relationship is learnable. Phase 3 shows it is in the
+data at 44 supported associations; the sweep shows this network did not pick it up.
+
+The magnitude reading also suggests a cheap test worth running before any redesign — map slope onto
+a *shuffled* reference with the same marginal distribution but no spatial structure. If the response
+is unchanged, the model is reading the channel's histogram and not its geography, and the fix is
+input normalisation rather than architecture.
 
 ---
 

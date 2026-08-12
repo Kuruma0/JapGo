@@ -197,21 +197,37 @@ def _predict(model, stack: np.ndarray):
         return torch.sigmoid(logits.float())[0, 0].cpu().numpy()
 
 
-def quantile_sweep(flatter_site: str, steeper_site: str) -> tuple:
-    """The sweep expressed as swaps between two real sites' slope distributions."""
-    return (
-        Perturbation("null", "slope", 1.0, dict.fromkeys(RESPONSES, "flat")),
-        QuantileMap(
-            f"slope_of_{flatter_site}", "slope", flatter_site,
-            {"road_density_km_per_km2": "up", "intersection_density_per_km2": "up",
-             "sinuosity_median": "down"},
-        ),
-        QuantileMap(
-            f"slope_of_{steeper_site}", "slope", steeper_site,
-            {"road_density_km_per_km2": "down", "intersection_density_per_km2": "down",
-             "sinuosity_median": "up"},
-        ),
-    )
+FLATTER_EXPECTATION = {
+    "road_density_km_per_km2": "up",
+    "intersection_density_per_km2": "up",
+    "sinuosity_median": "down",
+}
+STEEPER_EXPECTATION = {
+    "road_density_km_per_km2": "down",
+    "intersection_density_per_km2": "down",
+    "sinuosity_median": "up",
+}
+
+
+def quantile_sweep(references: dict[str, float], held_out_median: float) -> tuple:
+    """Swaps between real sites' slope distributions, with expectations set against *home*.
+
+    The first version ranked the two reference sites against each other and called the lower one
+    "flatten". That is wrong whenever the held-out site sits outside their range: sweeping the
+    Hamamatsu plain, both references are steeper than home, so the arm labelled "flatten" in fact
+    steepened the tile and was scored against an expectation it could not meet. The comparison has
+    to be against the distribution being replaced, not against the other replacement.
+    """
+    out: list = [Perturbation("null", "slope", 1.0, dict.fromkeys(RESPONSES, "flat"))]
+    for site, median in sorted(references.items(), key=lambda kv: kv[1]):
+        flatter = median < held_out_median
+        out.append(
+            QuantileMap(
+                f"slope_of_{site}", "slope", site,
+                dict(FLATTER_EXPECTATION if flatter else STEEPER_EXPECTATION),
+            )
+        )
+    return tuple(out)
 
 
 def reference_values(root: Path, tile_ids: list[str], index: int, *, cap: int = 2_000_000):
