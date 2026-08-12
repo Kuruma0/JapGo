@@ -16,23 +16,23 @@ co-author trailers or tool branding. Before pushing, check with
 
 ## Current phase
 
-**Phases 0–4 have results.** **81 tiles** across all three MVP archetypes, built from the published
-sources with nothing staged. Phase 3 reports **44 supported associations and 8 nulls** — steeper
-ground carries less road and fewer intersections; greater relief makes roads wind. Phase 4's dull
-U-Net beats the non-learned prior on **APLS and TOPO across 3/3 leave-one-site-out folds**, each
-evaluated on an archetype it never saw — the phase's actual exit criterion, met narrowly.
+**Phase 3 has a result. Phase 4 does not, yet.** **74 tiles** across all three MVP archetypes
+(stack v2), built from the published sources with nothing staged. Phase 3 reports **44 supported
+associations and 8 nulls** — steeper ground carries less road and fewer intersections; greater
+relief makes roads wind.
 
-**No longer cleanly met.** The centreline target (stack v2) cut junction inflation to 1.45–2.0×
-from 4.1× — and APLS did *not* follow, falling on two folds and costing Hamamatsu its pass. The
-criterion now holds on **2/3**. Junction count was a symptom: a network can have nearly the right
-number of junctions and still route nothing like the real one. Corpus is **74 tiles** after the
-v2 rebuild.
+Phase 4's exit criterion — beat a non-learned prior on APLS/TOPO on an unseen archetype — was met
+on 3/3 folds under the width target and is now met on **2/3** under the centreline target. Treat it
+as **not cleanly met**. The centreline change cut junction inflation from 4.1× to 1.45–2.0× and
+APLS did *not* follow: it fell on two folds and cost Hamamatsu its pass. Junction count was a
+symptom, not the cause — a network can carry nearly the right number of junctions and still route
+nothing like the real one.
 
-The control that matters: trained on the flat plain alone it scores APLS 0.005 on the mountain
-valley and *loses* to the prior; trained on flat *and* steep it scores 0.015 and wins. Same site,
-same seed. The model responds to environment, not just to built form.
+The control that matters, and it survives every change so far: trained on the flat plain alone the
+model *loses* to the prior on the mountain valley; trained on flat **and** steep it wins. Same
+site, same seed. The model responds to environment, not just to built form.
 
-Done (386 tests):
+Done (411 tests):
 
 | Package | Contents |
 | --- | --- |
