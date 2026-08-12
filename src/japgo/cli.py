@@ -698,6 +698,72 @@ def train(root, split_path, scheme, epochs, batch, crop, width, seed, dice_weigh
         click.secho(f"\n{cleared}/{len(results)} fold(s) beat both priors", bold=True)
 
 
+@main.command("sweep")
+@click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
+@click.option("--checkpoint", type=click.Path(path_type=Path), required=True,
+              help="A .pt from `japgo train`; its .config.json is read alongside it.")
+@click.option("--threshold", type=float, default=0.5, show_default=True)
+@click.option("--limit", type=int, default=6, show_default=True,
+              help="Held-out tiles to sweep. Each perturbation re-predicts every one of them.")
+def sweep(root, checkpoint, threshold, limit):
+    """Phase 5: does changing the environment change the road network?
+
+    The project's actual thesis. Holds the model fixed, perturbs one environmental channel at a
+    time on real tiles, and reports whether the predicted network moves the way a geographer would
+    predict — directions fixed in advance, not read off afterwards.
+    """
+    import json
+    import logging
+
+    import torch
+
+    from .model.nets import build_unet
+    from .model.sweep import RESPONSES, run_sweep
+    from .pipeline.channels import load_stack_spec
+
+    logging.basicConfig(level=logging.INFO, format="  %(message)s", force=True)
+
+    config_path = Path(str(checkpoint).replace(".pt", ".config.json"))
+    if not config_path.is_file():
+        raise click.ClickException(f"no run config beside the checkpoint at {config_path}")
+    cfg = json.loads(config_path.read_text())
+
+    spec = load_stack_spec()
+    if cfg.get("stack_version") not in (None, spec.stack_version):
+        raise click.ClickException(
+            f"checkpoint was trained on stack v{cfg['stack_version']} but the corpus is now "
+            f"v{spec.stack_version}. Retrain, or the channels do not mean the same thing."
+        )
+
+    model = build_unet(spec.depth, width=cfg.get("width", 32))
+    model.load_state_dict(torch.load(checkpoint, map_location="cpu"))
+    model = model.to("cuda" if torch.cuda.is_available() else "cpu")
+
+    click.secho(f"\nsweep on {cfg['fold']} (held out: {cfg['eval_tiles'][0]} ...)", bold=True)
+    results = run_sweep(Path(root), model, cfg["eval_tiles"], threshold=threshold, limit=limit)
+
+    agreed = total = 0
+    for r in results:
+        click.secho(f"\n  {r.perturbation}: {r.channel} x{r.factor}  ({r.tiles} tiles)", bold=True)
+        for response in RESPONSES:
+            got, want = r.direction(response), r.expect.get(response, "?")
+            ok = r.agrees(response)
+            if r.perturbation != "null":
+                agreed += ok
+                total += 1
+            click.secho(
+                f"    {response:<32} {r.baseline[response]:8.3f} -> {r.perturbed[response]:8.3f}"
+                f"   {got:<5} (expected {want})",
+                fg="green" if ok else "red",
+            )
+
+    click.echo("")
+    if total:
+        colour = "green" if agreed / total >= 0.6 else "red"
+        click.secho(f"{agreed}/{total} responses moved as predicted", fg=colour, bold=True)
+        click.echo("The null row must be flat; a response there is inference noise, not signal.")
+
+
 @main.command("study")
 @click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
 @click.option(

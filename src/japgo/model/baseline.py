@@ -23,7 +23,16 @@ from dataclasses import dataclass
 
 import numpy as np
 
-ROAD_TARGET = "road_mask"
+ROAD_TARGET = "road_centreline"
+"""What the model predicts.
+
+The width mask is still carried for validation, but training against it taught the network to
+paint a carriageway-wide band — correct for that target, and the direct cause of the junction
+inflation that survived the loss fix. Extraction thins to a centreline regardless, so the
+objective may as well be the thing that gets consumed.
+"""
+
+ROAD_WIDTH_TARGET = "road_mask"
 
 
 @dataclass(frozen=True)

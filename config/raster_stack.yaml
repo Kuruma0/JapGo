@@ -11,7 +11,7 @@
 # a curated ~12-channel stack at 512x512 float32 is ~12 MB per sample before batching. Adding
 # channels casually is how a 16 GB budget stops closing.
 
-stack_version: 1
+stack_version: 2
 
 # Fill value written where a channel has no data. NaN would poison convolutions; the model reads
 # the companion `_valid` mask channel to distinguish "zero" from "unknown".
@@ -139,7 +139,25 @@ targets:
     derived_from: roads
     units: binary
     normalise: none
-    note: The primary target. Road probability, from which the graph is extracted.
+    note: >
+      Road presence at carriageway width. Kept because width is a validation measure (spec §38) —
+      a 4 m service road and an 18 m arterial are not the same thing — but it is no longer what
+      the model trains against. See road_centreline.
+
+  - name: road_centreline
+    source: osm
+    derived_from: roads
+    units: binary
+    normalise: none
+    note: >
+      The training target, added in stack v2. Burned as a hairline rather than at carriageway
+      width.
+
+      Training against the width mask taught the model to paint a ~5 m band, which was correct
+      and unhelpful: a wide band skeletonises into a ladder, not a line, and that produced 2.3-4.1x
+      the real junction count no matter how the loss was weighted. The remaining inflation after
+      the Dice pass was a target problem, not a loss problem. Extraction thins to a centreline
+      anyway, so training against one aligns the objective with what is actually consumed.
 
   - name: road_class
     source: osm

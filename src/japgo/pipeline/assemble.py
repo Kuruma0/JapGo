@@ -285,11 +285,13 @@ class TileAssembler:
         out = np.zeros((self.spec.target_depth, rows, cols), np.float32)
 
         mask = rasterize.road_mask(graph, bounds, self.resolution, crs)
+        centreline = rasterize.road_mask(graph, bounds, self.resolution, crs, use_width=False)
         classes = rasterize.road_class_raster(graph, bounds, self.resolution, crs)
         sin_r, cos_r = rasterize.road_orientation(graph, bounds, self.resolution, crs)
 
         planes = {
             "road_mask": mask.data,
+            "road_centreline": centreline.data,
             "road_class": classes.data,
             "road_orientation_sin": sin_r.data,
             "road_orientation_cos": cos_r.data,

@@ -51,7 +51,8 @@ CHANNEL_STYLE: dict[str, dict] = {
     "landuse_forest": {"cmap": "grey", "label": "Land use: forest"},
     "landuse_water": {"cmap": "grey", "label": "Land use: water"},
     "valid": {"cmap": "grey", "label": "Valid mask"},
-    "road_mask": {"cmap": "magma", "label": "TARGET road mask"},
+    "road_mask": {"cmap": "magma", "label": "TARGET road mask (width)"},
+    "road_centreline": {"cmap": "magma", "label": "TARGET road centreline"},
     "road_class": {"cmap": "magma", "label": "TARGET road class"},
     "road_orientation_sin": {"cmap": "diverging", "label": "TARGET orientation (sin)"},
     "road_orientation_cos": {"cmap": "diverging", "label": "TARGET orientation (cos)"},
@@ -191,7 +192,7 @@ def render_tile(
                     name=f"target_{name}",
                     label=style.get("label", name),
                     data_uri=_data_uri(downsample_rgba(rgba, decimate)),
-                    default_on=(name == "road_mask"),
+                    default_on=(name == "road_centreline"),
                     group="target",
                 )
             )

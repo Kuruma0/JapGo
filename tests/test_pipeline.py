@@ -105,7 +105,10 @@ def test_input_sources_are_all_redistributable_core(spec, registry):
 def test_targets_come_from_osm(spec):
     """Correct and deliberate: training on OSM is fine, shipping its geometry is not."""
     assert spec.target_sources == ["osm"]
-    assert spec.target_depth == 4
+    # v2 added road_centreline beside road_mask: the model trains on the hairline, while the
+    # width mask stays for validation (spec §38 treats road width as a measure).
+    assert spec.target_depth == 5
+    assert "road_centreline" in spec.target_names
 
 
 def test_road_mask_is_the_primary_target(spec):
