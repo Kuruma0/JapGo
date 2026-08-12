@@ -22,9 +22,10 @@ ground carries less road and fewer intersections; greater relief makes roads win
 U-Net beats the non-learned prior on **APLS and TOPO across 3/3 leave-one-site-out folds**, each
 evaluated on an archetype it never saw — the phase's actual exit criterion, met narrowly.
 
-Met, and still bad. APLS runs 0.015–0.181 and the extractor produces **4.6–8.6× the real junction
-count**, because a `pos_weight` of up to 31 makes the model over-paint and blobs skeletonise into
-hairballs. Fix the loss before believing any structural number.
+Met, and still weak. After the Dice/cleanup pass, APLS runs 0.015–0.187 and junction inflation is
+**2.3–4.1×** (was 4.6–8.6×). Two of three folds improved on every axis; Kawanehon's pixel F1 rose
+by half. Do not read structural numbers as settled — inflation has to fall further before APLS
+responds on sparse networks.
 
 The control that matters: trained on the flat plain alone it scores APLS 0.005 on the mountain
 valley and *loses* to the prior; trained on flat *and* steep it scores 0.015 and wins. Same site,
@@ -56,11 +57,11 @@ the wheel still ships gfx1030 kernels before taking one.
 Session transcripts do not travel between machines. [docs/decision-log.md](docs/decision-log.md)
 records what happened when the reasoning met real data — read it alongside the research document.
 
-Next: **fix the over-painting before Phase 5**. A Dice or focal objective in place of heavily
-weighted BCE, and extraction thresholds matched to the real output. The sensitivity sweep measures
-how road *structure* responds to environmental change, and structure means the extracted graph —
-running it through an extractor that invents 5× the junctions would produce numbers nobody could
-interpret.
+Next: **a centreline target, then Phase 5**. The remaining width problem is a target problem, not
+a loss problem — road targets are rasterised at carriageway width, so the model correctly learns to
+paint a 5 m band that thins into a ladder rather than a line. A one-pixel centreline target with
+distance-transform weighting attacks the cause. Only then is the sensitivity sweep worth running:
+it measures how road *structure* responds to environment, and structure means the extracted graph.
 
 Before trusting Phase 3's ranking as an attribution, note that the terrain predictors are collinear
 (slope/relief/roughness rank together). Use `--scheme loso`, not the configured single-site split —
