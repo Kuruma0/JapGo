@@ -789,6 +789,55 @@ improving.
 
 ---
 
+## 2026-08-12 — Four interventions, one arc: junction count was never the lever
+
+The distance-weighted loss is the fourth change aimed at the same defect. Its single-variable
+comparison against v3 is unambiguous, and so is the four-version arc it completes. Hamamatsu fold,
+740 real junctions per tile:
+
+| Version | nodes | ratio | APLS | TOPO F1 | pixel recall |
+| --- | --- | --- | --- | --- | --- |
+| v1 width target, BCE | 3537 | 4.78× | 0.181 | 0.254 | 0.748 |
+| v2 + Dice, pos_weight capped | 3017 | 4.08× | 0.187 | 0.250 | 0.696 |
+| v3 + centreline target | 1076 | 1.45× | 0.047 | 0.135 | 0.327 |
+| v4 + distance weighting | **732** | **0.99×** | **0.042** | 0.104 | 0.295 |
+
+**Junction inflation is solved — 4.78× to 0.99×, essentially perfect parity — and APLS is at its
+worst of the four.** Recall halved along the way. Every intervention hit its stated target and
+moved the metric that matters in the wrong direction.
+
+That is as clear a refutation as this project has produced of a hypothesis it held for three
+consecutive changes. Junction count is not the lever. The model does not need to draw fewer roads;
+it needs to find the ones that are there.
+
+**v4 against v3 alone**, distance weighting being the only difference:
+
+| Held out | nodes | APLS | TOPO F1 | vs prior |
+| --- | --- | --- | --- | --- |
+| hamamatsu | 1076 → 732 | 0.047 → 0.042 | 0.135 → 0.104 | FAIL → FAIL |
+| izu | 132 → 126 | 0.038 → **0.059** | 0.312 → 0.300 | PASS → PASS |
+| kawanehon | 92 → 62 | 0.022 → 0.009 | 0.366 → 0.251 | PASS → **FAIL** |
+
+Topology now beats the prior on **1/3** folds, down from 2/3. Distance weighting was meant to
+recover the recall the hairline target lost; recall fell instead (0.327 → 0.295 on Hamamatsu).
+
+**The TOPO split names the real problem.** v4 reports precision 0.553 against recall 0.058 on
+Hamamatsu: the junctions it does place are mostly right, and it finds six percent of the network.
+Precision is no longer the constraint anywhere — recall is, on every fold.
+
+**And the cause was visible before the run started.** `pos_weight` is capped at 5.0. That cap was
+chosen for the width target at ~3% positive; the centreline target is **0.522% positive**, an
+imbalance near 191:1. The loss is therefore biased hard toward predicting background, which is
+exactly the behaviour observed. The cap was left in place deliberately so that v4 differed from v3
+in one variable only — but it is now the obvious next thing to change, and the expectation is that
+it matters considerably more than either the target or the distance weighting did.
+
+**Stop tuning the objective after that.** Four changes have produced a model with the right number
+of junctions in roughly the right places and far too few of them. If lifting the positive weight
+does not move recall, the limit is the corpus or the architecture, not the loss.
+
+---
+
 ## Corrections — things believed and then disproved
 
 Recorded because the wrong version is the intuitive one and will otherwise be re-derived.
