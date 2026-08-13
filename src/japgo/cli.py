@@ -632,9 +632,11 @@ def roads_analyse(osm_file: Path, zone_number: int, lod: int | None, area_km2: f
                    "toward the true inverse frequency only for a sparser target.")
 @click.option("--distance-tolerance-px", type=float, default=0.0, show_default=True,
               help="Soften false positives within this distance of a road. For thin targets; off by default.")
+@click.option("--fold", "only_fold", default=None,
+              help="Run one fold by name or held-out site. A run that dies partway should cost the remaining folds, not the finished ones.")
 @click.option("--out", type=click.Path(path_type=Path), default="runs", show_default=True)
 def train(root, split_path, scheme, epochs, batch, crop, width, seed, dice_weight,
-          max_pos_weight, distance_tolerance_px, out):
+          max_pos_weight, distance_tolerance_px, only_fold, out):
     """Phase 4: train the baseline and compare it against the non-learned priors.
 
     The exit criterion is not that it trains — it is that it beats a prior on a site it has never
@@ -654,6 +656,10 @@ def train(root, split_path, scheme, epochs, batch, crop, width, seed, dice_weigh
         )
     split = SplitDefinition.read(split_path)
     folds = folds_for(split, scheme=scheme)
+    if only_fold:
+        folds = [f for f in folds if only_fold in (f.name, f.held_out)]
+        if not folds:
+            raise click.ClickException(f"no fold matching {only_fold!r}")
 
     results = []
     for fold in folds:
@@ -750,6 +756,96 @@ def evaluate(root, runs_dir):
                             fg="green" if won else "red")
 
     click.secho(f"\n{cleared}/{len(configs)} checkpoint(s) beat the prior on topology", bold=True)
+
+
+@main.command("plausibility")
+@click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
+@click.option("--runs", "runs_dir", type=click.Path(path_type=Path), default="runs",
+              show_default=True)
+@click.option("--limit", type=int, default=8, show_default=True,
+              help="Held-out tiles per fold.")
+def plausibility(root, runs_dir, limit):
+    """Is the output plausible for its environment, even where it is not correct?
+
+    APLS asks whether a specific real network was reproduced. For a generator that is the wrong
+    question — what matters is whether the network has the right character for its terrain, and
+    whether the archetypes stay distinguishable from one another.
+    """
+    import json
+    import logging
+
+    import numpy as np
+    import torch
+
+    from .model.baseline import ROAD_TARGET, best_threshold
+    from .model.extract import ExtractionSpec, extract_graph
+    from .model.nets import build_unet
+    from .model.plausibility import PLAUSIBILITY_METRICS, compare, ordering_preserved
+    from .pipeline.channels import load_stack_spec
+    from .pipeline.store import read_tile
+
+    logging.basicConfig(level=logging.WARNING, format="  %(message)s", force=True)
+    spec = load_stack_spec()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    sites = []
+    for config_path in sorted(Path(runs_dir).glob("*.config.json")):
+        cfg = json.loads(config_path.read_text())
+        checkpoint = config_path.with_name(config_path.name.replace(".config.json", ".pt"))
+        if not checkpoint.is_file():
+            continue
+
+        model = build_unet(spec.depth, width=cfg.get("width", 32))
+        model.load_state_dict(torch.load(checkpoint, map_location="cpu"))
+        model = model.to(device).eval()
+
+        chosen = cfg["eval_tiles"][:limit]
+        bundles = [read_tile(Path(root), t) for t in chosen]
+        bundles = [b for b in bundles if b.roads is not None and b.roads.edges]
+        if not bundles:
+            continue
+
+        probs = []
+        for b in bundles:
+            with torch.no_grad():
+                x = torch.from_numpy(b.stack[None]).to(device)
+                with torch.autocast(device_type=device, dtype=torch.float16,
+                                    enabled=device == "cuda"):
+                    probs.append(torch.sigmoid(model(x).float())[0, 0].cpu().numpy())
+
+        # The model's own operating point, as everywhere else in this project.
+        flat_p = np.concatenate([p.ravel() for p in probs])
+        flat_t = np.concatenate([b.target(ROAD_TARGET).ravel() for b in bundles])
+        flat_v = np.concatenate([b.channel("valid").ravel() for b in bundles])
+        threshold = best_threshold(flat_p, flat_t, valid=flat_v).threshold
+
+        graphs = [
+            extract_graph(p, b.tile.read, b.manifest.crs,
+                          spec=ExtractionSpec(threshold=threshold), tile_id=b.tile.id)
+            for p, b in zip(probs, bundles, strict=True)
+        ]
+        site = compare(graphs, [b.roads for b in bundles], [b.tile for b in bundles],
+                       cfg["fold"].removeprefix("holdout_"))
+        sites.append(site)
+
+        click.secho(f"\n{site.site}  ({site.tiles} tiles, threshold {threshold:.2f})", bold=True)
+        for a in site.agreements:
+            click.secho(f"  {a.describe()}", fg="green" if a.plausible else "yellow")
+        click.echo(f"  plausible on {site.score:.0%} of measures")
+
+    if len(sites) < 2:
+        return
+    click.secho("\narchetype ordering — does the output stay environment-specific?", bold=True)
+    kept = 0
+    for metric in PLAUSIBILITY_METRICS:
+        agrees, real_order, pred_order = ordering_preserved(sites, metric)
+        kept += agrees
+        click.secho(f"  {'ok ' if agrees else 'NO '} {metric:<32}"
+                    f" real {' < '.join(s[:9] for s in real_order)}"
+                    f"   predicted {' < '.join(s[:9] for s in pred_order)}",
+                    fg="green" if agrees else "red")
+    click.secho(f"\n{kept}/{len(PLAUSIBILITY_METRICS)} measures keep the archetypes in the "
+                "right order", bold=True)
 
 
 @main.command("sweep")
