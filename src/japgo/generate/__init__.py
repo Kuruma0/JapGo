@@ -22,7 +22,7 @@ is what makes a seed reproduce a world.
 from __future__ import annotations
 
 from .candidates import CandidateReport, extract_candidates
-from .demo import DemoStage, build_demo, provenance_note, write_demo
+from .demo import DemoStage, build_demo, overlay_png, provenance_note, write_demo
 from .geometry import GeometrySpec, JunctionPoint, RoadSpline, build_geometry
 from .inference import DEFAULT_THRESHOLD, FrozenModel, ModelCard, RoadPrediction
 from .pipeline import (
@@ -33,6 +33,8 @@ from .pipeline import (
     generate_roads,
 )
 from .repair import RepairReport, RepairSpec, largest_component, repair
+from .synthetic import ARCHETYPES, SyntheticWorld, TerrainParams, params_for, synthesise
+from .world import WindowPlan, predict_world, terrain_stack
 from .terrain import TerrainReport, TerrainSpec, enforce_grade
 from .validate import ValidationReport, ValidationSpec, enforce, validate
 
@@ -41,6 +43,7 @@ __all__ = [
     "CandidateReport",
     "DemoStage",
     "build_demo",
+    "overlay_png",
     "provenance_note",
     "write_demo",
     "FrozenModel",
@@ -62,6 +65,14 @@ __all__ = [
     "JunctionPoint",
     "RoadSpline",
     "build_geometry",
+    "ARCHETYPES",
+    "SyntheticWorld",
+    "TerrainParams",
+    "params_for",
+    "synthesise",
+    "WindowPlan",
+    "predict_world",
+    "terrain_stack",
     "GeneratedRoads",
     "GenerationDiagnostics",
     "GenerationParams",

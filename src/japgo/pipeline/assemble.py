@@ -120,6 +120,30 @@ class TileBundle:
         return self.manifest.attribution(gate)
 
 
+def terrain_planes(dem: Raster) -> dict[str, np.ndarray]:
+    """The five terrain channels, from a DEM.
+
+    Module-level rather than a method because the generation side builds the same channels from a
+    heightfield that was never a tile — a game's own terrain, or a synthetic world. Two
+    implementations of this would be two definitions of what ``slope`` means, and the second one
+    would be wrong in a way no test would catch.
+    """
+    aspect_deg = terrain_ops.aspect(dem).data
+    aspect_rad = np.radians(aspect_deg)
+
+    # Flat cells have no aspect. sin/cos of NaN would poison the stack, so flats resolve to
+    # (0, 0) — a vector of zero length, which is the honest encoding of "no direction".
+    flat = np.isnan(aspect_rad)
+
+    return {
+        "elevation": dem.data,
+        "slope": terrain_ops.slope(dem, as_percent=True).data,
+        "aspect_sin": np.where(flat, 0.0, np.sin(aspect_rad)),
+        "aspect_cos": np.where(flat, 0.0, np.cos(aspect_rad)),
+        "roughness": terrain_ops.roughness(dem).data,
+    }
+
+
 class TileAssembler:
     """Composes source layers into a model-ready tile."""
 
@@ -249,20 +273,7 @@ class TileAssembler:
         return out
 
     def _terrain_planes(self, dem: Raster) -> dict[str, np.ndarray]:
-        aspect_deg = terrain_ops.aspect(dem).data
-        aspect_rad = np.radians(aspect_deg)
-
-        # Flat cells have no aspect. sin/cos of NaN would poison the stack, so flats resolve to
-        # (0, 0) — a vector of zero length, which is the honest encoding of "no direction".
-        flat = np.isnan(aspect_rad)
-
-        return {
-            "elevation": dem.data,
-            "slope": terrain_ops.slope(dem, as_percent=True).data,
-            "aspect_sin": np.where(flat, 0.0, np.sin(aspect_rad)),
-            "aspect_cos": np.where(flat, 0.0, np.cos(aspect_rad)),
-            "roughness": terrain_ops.roughness(dem).data,
-        }
+        return terrain_planes(dem)
 
     def _building_planes(self, buildings, bounds, crs) -> dict[str, np.ndarray]:
         planes = {

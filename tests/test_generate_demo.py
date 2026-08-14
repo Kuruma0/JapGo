@@ -60,7 +60,7 @@ def test_every_stage_is_rendered_and_the_panels_track_their_own_graph():
         raw_graph=littered, repaired_graph=repaired,
     )
 
-    assert len(stages) == 5
+    assert len(stages) == 6
     assert all(s.png.startswith(b"\x89PNG") for s in stages)
     assert stages[2].png != stages[3].png, "the extracted panel must show the extracted graph"
     assert stages[0].png != stages[1].png != stages[2].png

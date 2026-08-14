@@ -1,0 +1,192 @@
+{
+  "name": "plain_seed_002",
+  "archetype": "plain",
+  "seed": 2,
+  "params": {
+    "archetype": "plain",
+    "seed": 2,
+    "size_m": 4000.0,
+    "resolution_m": 1.0,
+    "noise_relief_m": 9.0,
+    "noise_octaves": 5,
+    "noise_base_cells": 3,
+    "noise_gain": 0.5,
+    "detail_relief_m": 0.6,
+    "base_elevation_m": 15.0,
+    "relief_m": 45.0,
+    "valley_wall_width_m": 480.0,
+    "valley_floor_width_m": 60.0,
+    "valley_drop_m": 250.0,
+    "tributary_drop_m": 200.0,
+    "shoreline_x_m": 900.0,
+    "shore_wobble_m": 320.0,
+    "sea_depth_m": 40.0,
+    "terrace_width_m": 350.0,
+    "terrace_height_m": 18.0,
+    "cliff_width_m": 220.0,
+    "basin_radius_m": 1150.0,
+    "basin_wall_width_m": 900.0,
+    "pass_bearings_deg": [
+      20.0,
+      130.0,
+      250.0,
+      315.0
+    ],
+    "pass_depths_m": [
+      0.62,
+      0.45,
+      0.78,
+      0.3
+    ],
+    "pass_width_deg": 11.0
+  },
+  "terrain_notes": [
+    "hills: (1437,1760) r=496 h=43; (2201,2956) r=518 h=27; (3274,1493) r=377 h=24",
+    "one shallow drainage line"
+  ],
+  "elevation_range_m": [
+    8.6,
+    52.0
+  ],
+  "probability": {
+    "threshold": 0.45,
+    "coverage_at_threshold": 0.0,
+    "max": 0.0263,
+    "mean": 0.0097,
+    "p99": 0.019051,
+    "p99_9": 0.020804,
+    "coverage_at": {
+      "0.05": 0.0,
+      "0.1": 0.0,
+      "0.2": 0.0,
+      "0.45": 0.0
+    }
+  },
+  "metrics": [
+    {
+      "stage": "RAW ML",
+      "edges": 0,
+      "nodes": 0,
+      "junctions": 0,
+      "dead_ends": 0,
+      "components": 0,
+      "total_length_m": 0,
+      "mean_edge_length_m": 0.0,
+      "dead_end_ratio": null,
+      "degree_histogram": {},
+      "road_density_km_per_km2": 0.0,
+      "intersection_density_per_km2": 0.0,
+      "orientation_entropy": null,
+      "sinuosity_median": null,
+      "max_grade_pct": null,
+      "mean_grade_pct": null,
+      "grade_violations": 0
+    },
+    {
+      "stage": "REPAIRED",
+      "edges": 0,
+      "nodes": 0,
+      "junctions": 0,
+      "dead_ends": 0,
+      "components": 0,
+      "total_length_m": 0,
+      "mean_edge_length_m": 0.0,
+      "dead_end_ratio": null,
+      "degree_histogram": {},
+      "road_density_km_per_km2": 0.0,
+      "intersection_density_per_km2": 0.0,
+      "orientation_entropy": null,
+      "sinuosity_median": null,
+      "max_grade_pct": null,
+      "mean_grade_pct": null,
+      "grade_violations": 0
+    },
+    {
+      "stage": "FINAL",
+      "edges": 0,
+      "nodes": 0,
+      "junctions": 0,
+      "dead_ends": 0,
+      "components": 0,
+      "total_length_m": 0,
+      "mean_edge_length_m": 0.0,
+      "dead_end_ratio": null,
+      "degree_histogram": {},
+      "road_density_km_per_km2": 0.0,
+      "intersection_density_per_km2": 0.0,
+      "orientation_entropy": null,
+      "sinuosity_median": null,
+      "max_grade_pct": null,
+      "mean_grade_pct": null,
+      "grade_violations": 0
+    }
+  ],
+  "diagnostics": "  candidates  0 edges / 0 nodes  (0 junctions, 0 endpoints, 0 components)  0.00 km  dead ends 0%  steep 0\n  repair      components 0 -> 0   dead ends 0% -> 0%   (dropped 0, bridged 0, snapped 0, pruned 0)\n  validation  0 edges / 0 nodes \u2014 valid\n  terrain     0 over limit -> 0 rerouted, 0 deleted; max grade 0% -> 0%; +0.00 km of alignment",
+  "terrain_response": {
+    "slope_pct": {
+      "quintiles": [
+        {
+          "from": 0.0,
+          "to": 0.94,
+          "mean_probability": 0.0038337
+        },
+        {
+          "from": 0.94,
+          "to": 1.6,
+          "mean_probability": 0.0079766
+        },
+        {
+          "from": 1.6,
+          "to": 2.53,
+          "mean_probability": 0.0112462
+        },
+        {
+          "from": 2.53,
+          "to": 3.76,
+          "mean_probability": 0.0130852
+        },
+        {
+          "from": 3.76,
+          "to": 28.44,
+          "mean_probability": 0.0123569
+        }
+      ],
+      "spread": 3.41,
+      "monotonic": false
+    },
+    "elevation_m": {
+      "quintiles": [
+        {
+          "from": 8.62,
+          "to": 14.29,
+          "mean_probability": 0.0069586
+        },
+        {
+          "from": 14.29,
+          "to": 17.16,
+          "mean_probability": 0.0082544
+        },
+        {
+          "from": 17.16,
+          "to": 21.1,
+          "mean_probability": 0.0091589
+        },
+        {
+          "from": 21.1,
+          "to": 30.15,
+          "mean_probability": 0.0127747
+        },
+        {
+          "from": 30.15,
+          "to": 51.98,
+          "mean_probability": 0.011352
+        }
+      ],
+      "spread": 1.84,
+      "monotonic": false
+    }
+  },
+  "reroutes": 0,
+  "deleted_no_route": 0,
+  "observations": []
+}

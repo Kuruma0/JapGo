@@ -1,0 +1,196 @@
+{
+  "name": "mountain_valley_seed_003",
+  "archetype": "mountain_valley",
+  "seed": 3,
+  "params": {
+    "archetype": "mountain_valley",
+    "seed": 3,
+    "size_m": 4000.0,
+    "resolution_m": 1.0,
+    "noise_relief_m": 110.0,
+    "noise_octaves": 6,
+    "noise_base_cells": 4,
+    "noise_gain": 0.5,
+    "detail_relief_m": 3.0,
+    "base_elevation_m": 220.0,
+    "relief_m": 780.0,
+    "valley_wall_width_m": 460.0,
+    "valley_floor_width_m": 60.0,
+    "valley_drop_m": 260.0,
+    "tributary_drop_m": 200.0,
+    "shoreline_x_m": 900.0,
+    "shore_wobble_m": 320.0,
+    "sea_depth_m": 40.0,
+    "terrace_width_m": 350.0,
+    "terrace_height_m": 18.0,
+    "cliff_width_m": 220.0,
+    "basin_radius_m": 1150.0,
+    "basin_wall_width_m": 900.0,
+    "pass_bearings_deg": [
+      20.0,
+      130.0,
+      250.0,
+      315.0
+    ],
+    "pass_depths_m": [
+      0.62,
+      0.45,
+      0.78,
+      0.3
+    ],
+    "pass_width_deg": 11.0
+  },
+  "terrain_notes": [
+    "trunk valley (478,216) (914,693) (1342,1174) (1919,1572) (2047,2222) (2154,2884) (2436,3448) (2798,3966)",
+    "tributary joins the trunk at (2154,2884) from (3849,1002)"
+  ],
+  "elevation_range_m": [
+    220.6,
+    1052.0
+  ],
+  "probability": {
+    "threshold": 0.45,
+    "coverage_at_threshold": 5.838e-05,
+    "max": 0.8771,
+    "mean": 0.000753,
+    "p99": 0.004737,
+    "p99_9": 0.011553,
+    "coverage_at": {
+      "0.05": 0.00038806,
+      "0.1": 0.00025656,
+      "0.2": 0.00016356,
+      "0.45": 5.838e-05
+    }
+  },
+  "metrics": [
+    {
+      "stage": "RAW ML",
+      "edges": 6,
+      "nodes": 12,
+      "junctions": 0,
+      "dead_ends": 12,
+      "components": 6,
+      "total_length_m": 259.8,
+      "mean_edge_length_m": 43.3,
+      "dead_end_ratio": 1.0,
+      "degree_histogram": {
+        "1": 12
+      },
+      "road_density_km_per_km2": 0.016,
+      "intersection_density_per_km2": 0.0,
+      "orientation_entropy": 0.344,
+      "sinuosity_median": 1.0,
+      "max_grade_pct": 19.1,
+      "mean_grade_pct": 13.8,
+      "grade_violations": 5
+    },
+    {
+      "stage": "REPAIRED",
+      "edges": 1,
+      "nodes": 2,
+      "junctions": 0,
+      "dead_ends": 2,
+      "components": 1,
+      "total_length_m": 76.0,
+      "mean_edge_length_m": 76.0,
+      "dead_end_ratio": 1.0,
+      "degree_histogram": {
+        "1": 2
+      },
+      "road_density_km_per_km2": 0.005,
+      "intersection_density_per_km2": 0.0,
+      "orientation_entropy": 0.0,
+      "sinuosity_median": 1.003,
+      "max_grade_pct": 0.5,
+      "mean_grade_pct": 0.5,
+      "grade_violations": 0
+    },
+    {
+      "stage": "FINAL",
+      "edges": 0,
+      "nodes": 0,
+      "junctions": 0,
+      "dead_ends": 0,
+      "components": 0,
+      "total_length_m": 0,
+      "mean_edge_length_m": 0.0,
+      "dead_end_ratio": null,
+      "degree_histogram": {},
+      "road_density_km_per_km2": 0.0,
+      "intersection_density_per_km2": 0.0,
+      "orientation_entropy": null,
+      "sinuosity_median": null,
+      "max_grade_pct": null,
+      "mean_grade_pct": null,
+      "grade_violations": 0
+    }
+  ],
+  "diagnostics": "  candidates  6 edges / 12 nodes  (0 junctions, 12 endpoints, 6 components)  0.26 km  dead ends 100%  steep 5\n  repair      components 6 -> 1   dead ends 100% -> 100%   (dropped 5, bridged 0, snapped 0, pruned 0)\n  validation  1 edges / 2 nodes \u2014 valid\n  terrain     1 over limit -> 0 rerouted, 1 deleted; max grade 37% -> 0%; +0.00 km of alignment",
+  "terrain_response": {
+    "slope_pct": {
+      "quintiles": [
+        {
+          "from": 0.01,
+          "to": 24.04,
+          "mean_probability": 0.0018213
+        },
+        {
+          "from": 24.04,
+          "to": 41.76,
+          "mean_probability": 0.0006496
+        },
+        {
+          "from": 41.76,
+          "to": 62.39,
+          "mean_probability": 0.0004743
+        },
+        {
+          "from": 62.39,
+          "to": 89.86,
+          "mean_probability": 0.0004386
+        },
+        {
+          "from": 89.86,
+          "to": 600.35,
+          "mean_probability": 0.000383
+        }
+      ],
+      "spread": 4.76,
+      "monotonic": true
+    },
+    "elevation_m": {
+      "quintiles": [
+        {
+          "from": 220.55,
+          "to": 530.38,
+          "mean_probability": 0.0008782
+        },
+        {
+          "from": 530.38,
+          "to": 757.67,
+          "mean_probability": 0.0005947
+        },
+        {
+          "from": 757.67,
+          "to": 866.89,
+          "mean_probability": 0.000644
+        },
+        {
+          "from": 866.89,
+          "to": 922.2,
+          "mean_probability": 0.0008332
+        },
+        {
+          "from": 922.2,
+          "to": 1051.99,
+          "mean_probability": 0.0008167
+        }
+      ],
+      "spread": 1.48,
+      "monotonic": false
+    }
+  },
+  "reroutes": 0,
+  "deleted_no_route": 1,
+  "observations": []
+}

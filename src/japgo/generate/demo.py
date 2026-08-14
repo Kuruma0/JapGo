@@ -49,13 +49,17 @@ def _decimate(rgba: np.ndarray, factor: int) -> np.ndarray:
     return rgba[::factor, ::factor] if factor > 1 else rgba
 
 
-def _graph_png(
-    graph: RoadGraph, bounds: Bounds, shape: tuple[int, int], resolution: float, *, decimate: int
-) -> bytes:
-    """Draw a graph by rasterising its polylines — no plotting library, same as the Phase 2 viewer."""
-    rows, cols = shape
-    canvas = np.zeros((rows, cols, 4), np.uint8)
-    canvas[..., 3] = 255
+def _draw_graph(
+    canvas: np.ndarray,
+    graph: RoadGraph,
+    bounds: Bounds,
+    resolution: float,
+    *,
+    road: tuple[int, int, int] = (235, 235, 235),
+    width: int = 1,
+) -> np.ndarray:
+    """Rasterise a graph's polylines onto an RGBA canvas — no plotting library, same as Phase 2."""
+    rows, cols = canvas.shape[:2]
 
     def plot(x: float, y: float, rgb: tuple[int, int, int], size: int = 1) -> None:
         c = int((x - bounds.minx) / resolution)
@@ -70,16 +74,45 @@ def _graph_png(
             steps = max(int(np.hypot(b[0] - a[0], b[1] - a[1]) / resolution), 1)
             for i in range(steps + 1):
                 f = i / steps
-                plot(a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1]), (235, 235, 235))
+                plot(a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1]), road, size=width)
 
     for nid, node in graph.nodes.items():
         degree = graph.degree(nid)
         if degree == 1:
-            plot(node.x, node.y, (235, 90, 90), size=2)      # dead end
+            plot(node.x, node.y, (235, 90, 90), size=width + 1)      # dead end
         elif degree >= 3:
-            plot(node.x, node.y, (90, 200, 235), size=2)     # junction
+            plot(node.x, node.y, (90, 200, 235), size=width + 1)     # junction
 
-    return png_bytes(_decimate(canvas, decimate))
+    return canvas
+
+
+def _graph_png(
+    graph: RoadGraph, bounds: Bounds, shape: tuple[int, int], resolution: float, *, decimate: int
+) -> bytes:
+    """A graph on black."""
+    canvas = np.zeros((*shape, 4), np.uint8)
+    canvas[..., 3] = 255
+    return png_bytes(_decimate(_draw_graph(canvas, graph, bounds, resolution), decimate))
+
+
+def overlay_png(
+    relief: np.ndarray,
+    graph: RoadGraph,
+    bounds: Bounds,
+    resolution: float,
+    *,
+    decimate: int = 2,
+) -> bytes:
+    """The final network drawn over the terrain that produced it.
+
+    The panel that answers the question the other five cannot: not "is this a network" but "does
+    this network belong to *this* ground". A road following a valley and a road crossing it look
+    identical side by side and unmistakable superimposed.
+    """
+    canvas = shade(relief).copy()
+    canvas[..., :3] = (canvas[..., :3] * 0.62).astype(np.uint8)     # dim, so roads read on top
+    drawn = _draw_graph(canvas, graph, bounds, resolution, road=(255, 196, 60), width=1)
+    return png_bytes(_decimate(drawn, decimate))
 
 
 def build_demo(
@@ -133,6 +166,12 @@ def build_demo(
             _graph_png(roads.graph, bounds, shape, resolution_m, decimate=decimate),
             "Grade-legal and smoothed. Steep alignments rerouted, not deleted.",
             d.terrain.describe(),
+        ),
+        DemoStage(
+            "6. roads on terrain",
+            overlay_png(relief, roads.graph, bounds, resolution_m, decimate=decimate),
+            "The same network over the ground it was generated from.",
+            "Does it follow the terrain, or merely sit on it?",
         ),
     ]
     if real_graph is not None:

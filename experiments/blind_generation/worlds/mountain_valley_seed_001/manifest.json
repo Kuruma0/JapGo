@@ -1,0 +1,28 @@
+{
+  "seed": 42,
+  "crs": "EPSG:6676",
+  "bounds": [
+    0.0,
+    0.0,
+    4000.0,
+    4000.0
+  ],
+  "roads": 3,
+  "junctions": 0,
+  "total_length_m": 309.5,
+  "components": 3,
+  "dead_end_ratio": 1.0,
+  "elevation_reference": "absolute",
+  "model": {
+    "nodes": 8,
+    "edges": 4,
+    "junctions": 0,
+    "endpoints": 8,
+    "components": 4,
+    "total_length_m": 305.1454704538948,
+    "dead_end_ratio": 1.0,
+    "steep_edges": 1,
+    "notes": []
+  },
+  "diagnostics": "  candidates  4 edges / 8 nodes  (0 junctions, 8 endpoints, 4 components)  0.31 km  dead ends 100%  steep 1\n  repair      components 4 -> 2   dead ends 100% -> 67%   (dropped 1, bridged 1, snapped 0, pruned 0)\n  validation  4 edges / 6 nodes \u2014 valid\n  terrain     2 over limit -> 1 rerouted, 1 deleted; max grade 43% -> 12%; +0.05 km of alignment"
+}

@@ -1105,3 +1105,73 @@ tile after repair is recognisably a road network. Reading that as "102 → 30 co
 it. Conversely the plain's real network has loops the generated one does not: the generator emits
 the corridors and misses the connectivity between them, which is the dead-end defect seen from the
 other side.
+
+## 2026-08-14 — Blind generation: the model is a road detector, not a road planner
+
+Twelve synthetic worlds — four archetypes, three seeds, 4 km square at 1 m/px, generated from
+parameters and a seed with no reference to any tile in the corpus. Terrain channels only. One
+configuration throughout. `japgo blind`, written up in
+[experiments/blind_generation/report.html](../experiments/blind_generation/report.html).
+
+**Six of twelve produced not one cell above threshold, seven produced no extractable edge, and
+nine finished with no road at all** — 1.04 km in total across 192 km². The plain is the sharpest
+case: gentler than Hamamatsu
+(3.9% mean slope against 6.5%), where the same channel policy gives 9.84% coverage, and its peak
+probability across 16 million cells is 0.026 against a threshold of 0.45.
+
+**The controls are what make that mean something**, and they were run first, on real tiles:
+
+| treatment | hamamatsu (held out) | kawanehon (trained) |
+| --- | --- | --- |
+| every channel | 19.98% | 4.64% |
+| terrain only | 9.84% (×0.49) | 3.23% (×0.70) |
+| terrain only, DEM blurred 4 m | **0.00035%** (×0.00004) | **0.102%** (×0.032) |
+
+Withholding buildings and land use costs a factor of two — real, and not the explanation. **A 4 m
+Gaussian blur of the terrain costs a factor of 28,000.** A 4 m blur leaves every valley, ridge,
+spur and slope intact; mean roughness moves 0.0111 → 0.0070. What it removes is the metre-scale
+signature of the road itself — the cutting, the embankment, the graded bench, the flat strip
+between two breaks of slope.
+
+So the model reads roads that are **already present in the terrain**. At 1 m a road is a visible
+earthwork, and detecting it is a much easier problem than the one the project intended to pose.
+
+The competing hypothesis was tested and rejected before this was written down: adding 0.05–0.4 m
+of Gaussian micro-relief to a synthetic window — matching the noise floor of a LiDAR-derived DEM —
+made the response *worse*, peak 0.110 → 0.028. Roughness is not what the model wants.
+
+**What it does transfer.** Mean probability by slope quintile is ordered on mountain, coastal and
+basin worlds: the flattest fifth carries 4–18× the probability mass of the steepest, monotonically.
+Roads prefer flat ground, and that survives to unseen terrain. It is 400× below the operating
+threshold, and on plains the ordering inverts into a structureless haze. The strongest
+sub-threshold arcs trace the break of slope where a valley floor meets its wall — the closest
+thing synthetic terrain contains to the geometry of a road bench.
+
+**This does not retract Phase 4.** Beating a non-learned prior on APLS and TOPO on held-out real
+tiles is a reconstruction result and it stands as one. It retracts any reading of Phase 4 as
+evidence about *generation*; the two were never the same claim and this is the first instrument
+that could separate them.
+
+**It explains the Phase 5 sweep retrospectively.** Quantile mapping preserves the fine geometry
+and moves the magnitudes, so the response tracked size and not direction. Shuffling destroys the
+geometry, so the prediction collapsed. Both are exactly what a detector of metre-scale road shape
+does, and neither is what a model reasoning about landform does.
+
+**The procedural layer is not implicated and cannot help.** Across all twelve worlds it bridged
+nothing, snapped nothing and pruned nothing — with four candidate edges kilometres apart, nothing
+is within reach of a 45 m bridge or a 25 m snap. On real tiles the same code is worth 3–4× fewer
+components and half the dead ends. Invariant 5's boundary is now located precisely: **a corrector
+can repair a bad network and cannot manufacture a missing one.**
+
+**What to change, in order.** Not more tiles — the corpus curve is not the lever for this failure.
+(1) Train at a resolution where road earthworks are invisible; the planned 30 m augmentation
+already exists as a specification and the blur control is a preview of it. (2) Supply demand
+rather than only terrain — a game knows where its towns are. (3) Make the blur control a standing
+evaluation: any checkpoint claiming to generate must survive it, and it takes four seconds.
+
+Two pieces of machinery came out of this and are reusable. `japgo.generate.world.predict_world`
+runs the frozen model over a world of any size in 1512 px windows — exactly a corpus tile's read
+extent, which also fixed a 285 s → 8 s regression caused by MIOpen re-tuning on ragged edge
+windows. `japgo.generate.synthetic` builds terrain from parameters and a seed; its valleys are
+weighted floor replacements rather than `min()` of a V-profile, because the latter facets the
+world into flat planes meeting at straight creases.

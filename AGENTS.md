@@ -38,11 +38,15 @@ orientation entropy and sinuosity all rank plain/coast/valley as reality does. W
 right in character. The one systematic defect is dead-end ratio at 3–9× reality, which is what the
 procedural connectivity pass (invariant 5) exists to fix — **now built**, and it roughly halves it.
 
-**The sweep still says the model does not use terrain correctly** — quantile-mapping a real site's
-slope distribution moves the prediction by the *size* of the change, not its direction, and
-shuffling the channel collapses the output. Do not read Phase 4's pass as evidence otherwise.
+**The model is a road detector, not a road planner — this is now proven, not suspected.** Blur a
+real tile's DEM by 4 m, leaving every valley and ridge intact, and coverage falls from 9.84% to
+0.00035%. What a 4 m blur removes is the metre-scale earthwork of the road itself. Given twelve
+synthetic worlds with no roads built into them, **nine finished with no road at all** and the
+twelve together yielded 1.04 km across 192 km².
+See `japgo blind` and [experiments/blind_generation](experiments/blind_generation/). Phase 4's
+pass is a *reconstruction* result and stands as one; it is not evidence about generation.
 
-Done (473 tests):
+Done (492 tests):
 
 | Package | Contents |
 | --- | --- |
@@ -83,11 +87,13 @@ site out; kawanehon and izu were training data. The card names this in `held_out
 prints it, because a picture carries no fold label and the resemblance on a training tile is partly
 recall.
 
-Next, in order of measured value: **(1) more tiles** — the curve is still linear at 152 and no
-objective change has ever matched it; **(2) the remaining dead-end gap** — 4.3–8.2× reality *after*
-repair, which bridging cannot close because the prediction is fragmented past what any
-deterministic pass can infer; **(3) terrain responsiveness**, the sweep failure below, which is
-what separates plausible output from good.
+Next, in order of measured value — and note the blind experiment reorders this. **(1) Train at a
+resolution where road earthworks are invisible.** The planned 30 m augmentation is already
+specified; the blur control is a preview of what it does. This is the only change that addresses
+the detector/planner failure. **(2) Supply demand, not only terrain** — a game knows where its
+towns are, and with buildings and land use zeroed there is no demand signal at all. **(3) More
+tiles**, which the corpus curve still says is linear at 152, but which will buy a better detector
+rather than a planner. **(4) The dead-end gap**, 4.3–8.2× reality after repair.
 Do not tune the loss further without a reason beyond "the last thing did not work".
 
 **The sweep has produced its first real answer, and it is negative.** `japgo sweep --mode
@@ -211,6 +217,10 @@ Do not skip these. Each exists because the failure it prevents is expensive and 
   available for the rest of Japan. Terrain enters the model at a 1 m working tier with augmentation
   that simulates 30 m sources. Keep the raw 0.5 m for validation and high-detail export.
 - **Fetching AW3D30 "latest".** v4.1 excludes Japan. Pin v3.1.
+- **Reading a good reconstruction score as evidence of generation.** They are different claims and
+  only one instrument separates them: blur the DEM by 4 m and re-predict. `road_v1` loses four
+  orders of magnitude. Any checkpoint claiming to generate must survive that, and it takes four
+  seconds — see `japgo.generate.blind.run_controls`.
 - **Assuming the GPU stack works.** Run `scripts/gpu_spike.py` before Phase 4 depends on it. On
   Linux gfx1030 is a supported ROCm configuration so this should be a confirmation; the historical
   warnings about Windows wheels and WSL2 no longer apply to the training machine.

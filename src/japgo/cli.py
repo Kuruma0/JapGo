@@ -839,6 +839,92 @@ def demo(tile_id, sites, split_path, root, model_path, out, seed, datum):
         click.secho(f"  {page}", fg="green")
 
 
+@main.command("blind")
+@click.option("--out", type=click.Path(path_type=Path),
+              default="experiments/blind_generation", show_default=True)
+@click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
+@click.option("--model", "model_path", type=click.Path(path_type=Path),
+              default="models/road_v1/road_v1.json", show_default=True)
+@click.option("--seeds", default="1,2,3", show_default=True,
+              help="Terrain seeds, applied to every archetype.")
+@click.option("--archetype", "only", multiple=True, help="Restrict to these archetypes.")
+@click.option("--size", type=float, default=4000.0, show_default=True, help="World edge, metres.")
+@click.option("--gen-seed", type=int, default=42, show_default=True,
+              help="Generation seed. One value for the whole experiment, never per world.")
+@click.option("--report-only", is_flag=True,
+              help="Rebuild report.html from saved metrics and images. No model, no GPU.")
+def blind(out, root, model_path, seeds, only, size, gen_seed, report_only):
+    """Generate roads for synthetic terrain the model has never seen, and report honestly.
+
+    Four archetypes, three seeds, one configuration, no ground truth. Controls on real tiles
+    measure what the experiment's own channel policy costs, so a blank world can be attributed
+    rather than guessed at.
+    """
+    import json
+    import logging
+
+    from .generate import FrozenModel, GenerationParams
+    from .generate.blind import (
+        run_controls, run_world, save_images, write_master_report, write_world_report,
+        world_panels,
+    )
+    from .generate.synthetic import ARCHETYPES, params_for, synthesise
+
+    logging.basicConfig(level=logging.WARNING, format="  %(message)s", force=True)
+    out = Path(out)
+    images = out / "images"
+    metrics_dir = out / "metrics"
+
+    if report_only:
+        payload = json.loads((metrics_dir / "all.json").read_text(encoding="utf-8"))
+        model = FrozenModel.load(Path(model_path))
+        page = write_master_report(
+            out / "report.html", results=payload["worlds"], controls=payload["controls"],
+            model_card=model, images_dir=images,
+        )
+        click.secho(f"{page}", fg="green")
+        return
+
+    model = FrozenModel.load(Path(model_path))
+    params = GenerationParams(seed=gen_seed)
+    chosen = [a for a in ARCHETYPES if not only or a in only]
+    seed_list = [int(s) for s in seeds.split(",") if s.strip()]
+
+    click.secho("controls on real tiles", bold=True)
+    controls = run_controls(model, Path(root), {
+        "hamamatsu_plain (held out)": "z08_x-00073_y-00144",
+        "kawanehon_valley (trained)": "z08_x-00038_y-00106",
+    })
+    for c in controls:
+        click.echo(f"  {c['site']:28} full {c['full_channels']:8.4%}  "
+                   f"terrain only {c['terrain_only']:8.4%}  "
+                   f"blurred {c['terrain_only_smoothed_4m']:8.4%}")
+
+    worlds = []
+    for archetype in chosen:
+        for seed in seed_list:
+            world = synthesise(params_for(archetype, seed, size_m=size))
+            click.secho(f"\n{world.describe()}", bold=True)
+            run = run_world(model, world, params=params)
+            panels = world_panels(run)
+            record = run.result.to_dict()
+            record["images"] = save_images(panels, images, world.name)
+            worlds.append(record)
+
+            write_world_report(run, out / "worlds" / world.name)
+            click.echo(run.result.diagnostics)
+            click.echo(f"  probability   max {run.result.probability['max']:.3f}  "
+                       f"coverage {run.result.probability['coverage_at_threshold']:.5%}")
+
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    (metrics_dir / "all.json").write_text(
+        json.dumps({"controls": controls, "worlds": worlds}, indent=2) + "\n", encoding="utf-8")
+
+    page = write_master_report(out / "report.html", results=worlds, controls=controls,
+                               model_card=model, images_dir=images)
+    click.secho(f"\n{page}", fg="green")
+
+
 @main.command("world-eval")
 @click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
 @click.option("--model", "model_path", type=click.Path(path_type=Path),
