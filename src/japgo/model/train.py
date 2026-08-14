@@ -29,6 +29,7 @@ from .dataset import (
     DEFAULT_CROP,
     Fold,
     PatchLoader,
+    epoch_batches,
     assert_no_overlap,
     configured_fold,
     index_patches,
@@ -60,6 +61,11 @@ class RunConfig:
     Off by default. It exists for the hairline target, where a two-pixel miss is punished as hard
     as a road in the sea; against the width mask it is unnecessary and measured slightly worse
     (v4). Set it when experimenting with thin targets."""
+    resident_tiles: int = 12
+    """Tiles held in memory at once, and the grouping width for shuffling.
+
+    12 tiles is ~2.2 GB against 31 GB of RAM, and it is what lets a batch mix several tiles
+    without evicting the cache between patches. See :func:`~japgo.model.dataset.epoch_batches`."""
     max_positive_weight: float = 5.0
     """Ceiling on the BCE positive weight, which otherwise takes the class's inverse frequency.
 
@@ -216,7 +222,7 @@ def train_fold(root: Path, fold: Fold, config: RunConfig, *, out_dir: Path) -> R
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
 
-    loader = PatchLoader(root)
+    loader = PatchLoader(root, max_tiles=config.resident_tiles)
     train_patches = index_patches(root, fold.train_tiles, crop=config.crop)
     if not train_patches:
         raise ValueError(f"{fold.name}: no usable training patches")
@@ -240,16 +246,17 @@ def train_fold(root: Path, fold: Fold, config: RunConfig, *, out_dir: Path) -> R
     use_amp = device.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
-    rng = np.random.default_rng(config.seed)
     started = time.perf_counter()
 
     for epoch in range(config.epochs):
         model.train()
-        order = rng.permutation(len(train_patches))
+        batches = epoch_batches(
+            train_patches, batch=config.batch,
+            resident_tiles=config.resident_tiles, seed=config.seed, epoch=epoch,
+        )
         running, steps = 0.0, 0
 
-        for start in range(0, len(order) - config.batch + 1, config.batch):
-            picks = [train_patches[i] for i in order[start : start + config.batch]]
+        for picks in batches:
             xs, ys = zip(*(loader.read(p, config.crop) for p in picks), strict=True)
             targets = np.stack(ys)[:, target_index : target_index + 1]
             x = torch.from_numpy(np.stack(xs)).to(device)

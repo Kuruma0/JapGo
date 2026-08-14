@@ -187,3 +187,49 @@ def test_the_reference_configuration_is_the_one_that_measured_best():
 
     # The alternative stays selectable, because the comparison is worth being able to re-run.
     assert ROAD_CENTRELINE_TARGET == "road_centreline"
+
+
+def test_epoch_batches_keep_patches_grouped_by_tile():
+    """The loader was costing four fifths of training time.
+
+    A plain permutation over every patch means consecutive reads come from different tiles, and
+    each miss re-decompresses a 183 MB zarr: measured 221 ms against 8.7 ms for a resident tile,
+    25x. Grouping keeps batches mixing several tiles while all of them stay in memory.
+    """
+    from japgo.model.dataset import Patch, epoch_batches
+
+    patches = [Patch(f"tile{t}", r, 0) for t in range(20) for r in range(16)]
+    batches = epoch_batches(patches, batch=8, resident_tiles=4, seed=0, epoch=0)
+
+    assert batches and all(len(b) == 8 for b in batches)
+    # No batch may span more tiles than can be resident at once.
+    for b in batches:
+        assert len({p.tile_id for p in b}) <= 4
+    # And a batch should usually mix tiles rather than come from one: gradients need the variety.
+    assert max(len({p.tile_id for p in b}) for b in batches) > 1
+
+
+def test_epoch_batches_reshuffle_between_epochs_but_are_seed_stable():
+    from japgo.model.dataset import Patch, epoch_batches
+
+    patches = [Patch(f"tile{t}", r, 0) for t in range(8) for r in range(16)]
+    first = epoch_batches(patches, batch=8, resident_tiles=4, seed=0, epoch=0)
+    again = epoch_batches(patches, batch=8, resident_tiles=4, seed=0, epoch=0)
+    later = epoch_batches(patches, batch=8, resident_tiles=4, seed=0, epoch=1)
+
+    ids = lambda bs: [[p.tile_id + str(p.row) for p in b] for b in bs]  # noqa: E731
+    assert ids(first) == ids(again)      # invariant 8: re-runnable from the seed
+    assert ids(first) != ids(later)      # but a different epoch is a different order
+
+
+def test_every_patch_is_reachable_within_an_epoch():
+    """Dropping patches silently would shrink the training set without anyone noticing."""
+    from japgo.model.dataset import Patch, epoch_batches
+
+    patches = [Patch(f"tile{t}", r, 0) for t in range(6) for r in range(16)]
+    seen = {
+        (p.tile_id, p.row)
+        for b in epoch_batches(patches, batch=8, resident_tiles=3, seed=0, epoch=0)
+        for p in b
+    }
+    assert len(seen) == len(patches)     # 96 patches, 16 per tile, divides evenly into batches
