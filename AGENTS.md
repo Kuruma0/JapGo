@@ -53,6 +53,7 @@ Done (428 tests):
 | `japgo.pipeline` | Channel spec, rasterisation, `TileAssembler`, store, geographic splits, region builder |
 | `japgo.viz` | Phase 2 alignment reports — self-contained HTML, no plotting dependency |
 | `japgo.analysis` | Phase 3 study: environmental predictors, road-structure responses, cluster-bootstrapped ranking |
+| `japgo.model` | Phase 4/5: U-Net baseline, non-learned priors, graph extraction, APLS/TOPO, plausibility, sensitivity sweep |
 | ingest | `sources.overpass` (roads), `sources.jismesh` (PLATEAU member selection), `pipeline.remote` (no staging) |
 
 Geospatial stack verified on Windows/py3.13 — GDAL 3.12.4 via wheels, no toolchain build. The
@@ -68,9 +69,11 @@ the wheel still ships gfx1030 kernels before taking one.
 Session transcripts do not travel between machines. [docs/decision-log.md](docs/decision-log.md)
 records what happened when the reasoning met real data — read it alongside the research document.
 
-Next: **a soft centreline target, then re-run the sweep**. Neither target is right — width
-over-paints, hairline under-detects. Distance-transform weighting, so a near-miss is penalised in
-proportion to distance, is what the original note proposed and what stack v2 only half-implemented.
+Next, in order of measured value: **(1) more tiles** — the curve is still linear at 152 and no
+objective change has ever matched it; **(2) the procedural constraint pass** (invariant 5), which
+is unbuilt and is what fixes the dead-end defect and grade violations; **(3) terrain
+responsiveness**, the sweep failure below, which is what separates plausible output from good.
+Do not tune the loss further without a reason beyond "the last thing did not work".
 
 **The sweep has produced its first real answer, and it is negative.** `japgo sweep --mode
 quantile` gives a held-out tile another real site's slope distribution, value for value — nothing
