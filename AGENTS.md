@@ -16,42 +16,33 @@ co-author trailers or tool branding. Before pushing, check with
 
 ## Current phase
 
-**Phase 3 has a result. Phase 4 does not, yet.** **74 tiles** across all three MVP archetypes
-(stack v2), built from the published sources with nothing staged. Phase 3 reports **44 supported
-associations and 8 nulls** — steeper ground carries less road and fewer intersections; greater
-relief makes roads wind.
+**Phases 3 and 4 have results.** **152 tiles** across all three MVP archetypes, built from the
+published sources with nothing staged. Phase 3 reports **44 supported associations and 8 nulls**.
+Phase 4's exit criterion — beat a non-learned prior on APLS/TOPO on an unseen archetype — is met on
+**3/3** leave-one-site-out folds.
 
-Phase 4's exit criterion — beat a non-learned prior on APLS/TOPO on an unseen archetype — is **not
-cleanly met**, and five measured configurations say the objective is not why. Mean APLS across the
-folds: v1 width+BCE 0.080, **v2 width+Dice 0.092**, v3 centreline 0.036, v4 +distance weighting
-0.037, v5 +true positive weight 0.031.
+**Corpus size is the lever, and it has not saturated.** Three sizes measured on identical folds:
+74 → 118 → 152 tiles gives mean APLS 0.054 → 0.069 → 0.079, an almost constant 0.48–0.49
+APLS-percent per tile-percent. Five objective changes moved APLS within 0.031–0.092; doubling the
+corpus moved it further and turned Kawanehon from failing to passing. **Add data before changing
+the model.**
 
 **v2 is the reference configuration** — width target, Dice, positive weight capped at 5, no
-distance weighting. Defaults are pinned to it and covered by a test so they cannot drift to
-whatever the last experiment used; every alternative stays reachable from the CLI. The three
-changes after v2 were regressions.
+distance weighting. Pinned by test so it cannot drift; every alternative stays reachable from the
+CLI. The three changes after v2 were regressions, and junction count was a symptom throughout
+(inflation went 4.78× → 0.99× while APLS fell).
 
-Re-established on the current corpus (`runs/reference`), it beats the best centreline variant on
-identical data by **+45% APLS, +37% TOPO, +107% pixel F1**, with precision and recall within six
-points on every fold — the first run whose folds agree rather than trading wins. Topology beats the
-prior on **2/3**; Kawanehon still fails at APLS 0.010 against 0.012 and has in every configuration.
+**For generation, the output is better than APLS suggests.** `japgo plausibility` reports **4 of 5
+structural measures keeping the archetypes in the right order** — density, intersection density,
+orientation entropy and sinuosity all rank plain/coast/valley as reality does. Wrong in placement,
+right in character. The one systematic defect is dead-end ratio at 3–9× reality, which is what the
+unbuilt procedural connectivity pass (invariant 5) exists to fix.
 
-It does **not** reproduce v2's own 0.092: that was 81 tiles at stack v1, this is 74 at stack v2, a
-41% gap on the same configuration. Resolving which of those two differences caused it is the
-cheapest informative experiment left, and it bears directly on the corpus-size hypothesis.
+**The sweep still says the model does not use terrain correctly** — quantile-mapping a real site's
+slope distribution moves the prediction by the *size* of the change, not its direction, and
+shuffling the channel collapses the output. Do not read Phase 4's pass as evidence otherwise.
 
-Junction inflation went **4.78× → 0.99×** across those changes and APLS never followed, so junction
-count was a symptom throughout. **Do not tune the objective further** without a reason beyond "the
-last thing did not work" — five configurations put APLS in 0.015–0.19 regardless of target, loss
-composition or class weighting. The untested candidates are the **corpus** (74 tiles, ~800
-patches/fold; every fold looks under-fitted) and **node placement**, which nothing measures yet:
-APLS needs junctions in the right *places*, and every metric so far constrains their *number*.
-
-The control that matters, and it survives every change so far: trained on the flat plain alone the
-model *loses* to the prior on the mountain valley; trained on flat **and** steep it wins. Same
-site, same seed. The model responds to environment, not just to built form.
-
-Done (420 tests):
+Done (428 tests):
 
 | Package | Contents |
 | --- | --- |

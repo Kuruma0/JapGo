@@ -934,6 +934,61 @@ and the one the thesis rests on. Whatever is limiting the project is most visibl
 
 ---
 
+## 2026-08-14 — The corpus curve is linear, and the output is environment-specific
+
+Three corpus sizes now measured on identical folds and configuration.
+
+| Corpus | mean APLS | mean TOPO F1 | mean pixel F1 | topology vs prior |
+| --- | --- | --- | --- | --- |
+| 74 tiles | 0.054 | 0.380 | 0.505 | 2/3 |
+| 118 tiles | 0.069 | 0.363 | 0.531 | **3/3** |
+| 152 tiles (12 epochs) | **0.079** | **0.385** | **0.544** | **3/3** |
+
+**The elasticity is almost exactly constant.** +59% tiles bought +29% APLS; +29% tiles bought
++14%. That is 0.49 and 0.48 APLS-percent per tile-percent — no sign of saturation at 152 tiles,
+and the strongest evidence yet that corpus size, not the objective, is what this model is short of.
+Five objective changes moved mean APLS within 0.031–0.092; doubling the corpus moved it 0.054 →
+0.079 and turned Kawanehon from a failure into a pass.
+
+*Confound, stated:* this run also raised epochs 8 → 12, so its +14% is not attributable to tiles
+alone. The elasticity matching the previous point so closely suggests tiles dominate, but a clean
+fourth run at 152 tiles and 8 epochs would settle it.
+
+### Plausibility: 4 of 5 measures keep the archetypes apart
+
+This is the measure that matters for a generation product, and it improved with the corpus from
+3/5 to **4/5**:
+
+| Measure | Real ordering | Predicted | |
+| --- | --- | --- | --- |
+| road density | kawanehon < izu < hamamatsu | same | ok |
+| intersection density | kawanehon < izu < hamamatsu | same | ok |
+| orientation entropy | kawanehon < izu < hamamatsu | same | ok |
+| sinuosity | hamamatsu < izu < kawanehon | same | ok |
+| dead-end ratio | kawanehon < hamamatsu < izu | wrong | **NO** |
+
+Road density ordering was failing at 118 tiles and is now correct. Per-site plausibility is
+80% / 60% / 100% of measures within a factor of two, and **Kawanehon scores best** — the site every
+fidelity metric calls the hardest.
+
+So the model produces output that is *wrong in placement but right in character*, and the
+character is environment-specific on four of five axes. For reconstruction that is a poor result;
+for generation, which is where the commercial emphasis sits, it is a substantially better one than
+APLS 0.079 suggests. Research doc §38 anticipated exactly this gap — "a structurally excellent
+network that differs from the real one is a success".
+
+**The one systematic defect is dead-end ratio**, predicted 0.72–0.86 against real 0.00–0.25 on
+every site. Two thirds of predicted junctions are dead ends: a network of stubs. It is the same
+failure everywhere, so it is not environmental, and it is precisely what the unbuilt procedural
+connectivity-repair pass (invariant 5) exists to fix. In a game it would be the most visible flaw
+by a wide margin.
+
+**Budget note.** The run was sized for 5 hours and took 178 minutes — 80 building, 98 training.
+The estimate over-counted because many tiles were cache hits and the sampler fix had already cut
+training more than the model assumed. Roughly two hours went unused.
+
+---
+
 ## Corrections — things believed and then disproved
 
 Recorded because the wrong version is the intuitive one and will otherwise be re-derived.
