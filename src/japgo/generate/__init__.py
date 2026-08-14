@@ -22,7 +22,15 @@ is what makes a seed reproduce a world.
 from __future__ import annotations
 
 from .candidates import CandidateReport, extract_candidates
+from .geometry import GeometrySpec, JunctionPoint, RoadSpline, build_geometry
 from .inference import DEFAULT_THRESHOLD, FrozenModel, ModelCard, RoadPrediction
+from .pipeline import (
+    GeneratedRoads,
+    GenerationDiagnostics,
+    GenerationParams,
+    export_bundle,
+    generate_roads,
+)
 from .repair import RepairReport, RepairSpec, largest_component, repair
 from .terrain import TerrainReport, TerrainSpec, enforce_grade
 from .validate import ValidationReport, ValidationSpec, enforce, validate
@@ -45,4 +53,13 @@ __all__ = [
     "ValidationSpec",
     "enforce",
     "validate",
+    "GeometrySpec",
+    "JunctionPoint",
+    "RoadSpline",
+    "build_geometry",
+    "GeneratedRoads",
+    "GenerationDiagnostics",
+    "GenerationParams",
+    "export_bundle",
+    "generate_roads",
 ]
