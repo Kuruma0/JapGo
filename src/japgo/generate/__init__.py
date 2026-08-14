@@ -21,6 +21,28 @@ is what makes a seed reproduce a world.
 
 from __future__ import annotations
 
+from .candidates import CandidateReport, extract_candidates
 from .inference import DEFAULT_THRESHOLD, FrozenModel, ModelCard, RoadPrediction
+from .repair import RepairReport, RepairSpec, largest_component, repair
+from .terrain import TerrainReport, TerrainSpec, enforce_grade
+from .validate import ValidationReport, ValidationSpec, enforce, validate
 
-__all__ = ["DEFAULT_THRESHOLD", "FrozenModel", "ModelCard", "RoadPrediction"]
+__all__ = [
+    "DEFAULT_THRESHOLD",
+    "CandidateReport",
+    "FrozenModel",
+    "ModelCard",
+    "RepairReport",
+    "RepairSpec",
+    "RoadPrediction",
+    "extract_candidates",
+    "largest_component",
+    "repair",
+    "TerrainReport",
+    "TerrainSpec",
+    "enforce_grade",
+    "ValidationReport",
+    "ValidationSpec",
+    "enforce",
+    "validate",
+]

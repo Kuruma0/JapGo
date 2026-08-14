@@ -138,6 +138,11 @@ class Edge(BaseModel):
     width_m: float | None = None
     lane_count: int | None = None
     oneway: bool = False
+
+    grade_pct: float | None = None
+    """End-to-end gradient, percent. Specified in research doc §11 and unimplemented until the
+    generation module needed it: grade cannot be recovered downstream because the elevation raster
+    is gone by the time a graph reaches an exporter, so it is sampled at extraction and carried."""
     structure: Structure = Structure.AT_GRADE
     surface: str | None = None
 
