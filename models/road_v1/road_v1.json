@@ -1,0 +1,35 @@
+{
+  "checkpoint": "models/road_v1/road_v1.pt",
+  "trained_on": "191-tile Shizuoka corpus (hamamatsu_plain 85, kawanehon_valley 64, izu_coast 42); this checkpoint is the leave-one-site-out fold holding out hamamatsu_plain, trained on 106 tiles for 12 epochs, seed 0",
+  "channels": [
+    "elevation",
+    "slope",
+    "aspect_sin",
+    "aspect_cos",
+    "roughness",
+    "building_mask",
+    "building_height",
+    "building_coarse_residential",
+    "building_coarse_commercial",
+    "building_coarse_industrial",
+    "landuse_built",
+    "landuse_agricultural",
+    "landuse_forest",
+    "landuse_water",
+    "valid"
+  ],
+  "stack_version": 2,
+  "resolution_m": 1.0,
+  "crs": "EPSG:6676",
+  "registry_hash": "5cf7ff78cf16f0c3",
+  "width": 32,
+  "threshold": 0.45,
+  "metrics": {
+    "apls": 0.172,
+    "topo_f1": 0.408,
+    "pixel_f1": 0.626,
+    "mean_apls_all_folds": 0.096,
+    "junction_ratio": 1.1855524079320112
+  },
+  "notes": "Frozen 2026-08-14. Reference configuration: width target, BCE+Dice, positive weight capped at 5, no distance weighting. Beats the built-proximity prior on APLS and TOPO on 3/3 held-out archetypes. Known defect: predicted dead-end ratio runs 3-20x reality, which the procedural connectivity pass exists to repair -- do not read a raw prediction as a usable network. The corpus curve had not saturated at 191 tiles (elasticity ~0.8 APLS-% per tile-%), so more data remains the strongest known lever if training resumes."
+}

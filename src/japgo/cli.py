@@ -762,8 +762,8 @@ def evaluate(root, runs_dir):
 @click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
 @click.option("--runs", "runs_dir", type=click.Path(path_type=Path), default="runs",
               show_default=True)
-@click.option("--limit", type=int, default=8, show_default=True,
-              help="Held-out tiles per fold.")
+@click.option("--limit", type=int, default=0, show_default=True,
+              help="Held-out tiles per fold; 0 uses every one. Sampling a fixed count makes the real reference move when the corpus grows, which invalidates comparison between runs.")
 def plausibility(root, runs_dir, limit):
     """Is the output plausible for its environment, even where it is not correct?
 
@@ -799,7 +799,11 @@ def plausibility(root, runs_dir, limit):
         model.load_state_dict(torch.load(checkpoint, map_location="cpu"))
         model = model.to(device).eval()
 
-        chosen = cfg["eval_tiles"][:limit]
+        # All tiles by default. Taking the first N made the ground-truth reference itself
+        # shift between runs -- Kawanehon's real road density moved 2.129 -> 3.028 purely
+        # because the site grew and a different first ten were sampled, flipping an ordering
+        # the model had nothing to do with.
+        chosen = cfg["eval_tiles"][:limit] if limit else cfg["eval_tiles"]
         bundles = [read_tile(Path(root), t) for t in chosen]
         bundles = [b for b in bundles if b.roads is not None and b.roads.edges]
         if not bundles:
