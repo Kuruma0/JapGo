@@ -758,6 +758,92 @@ def evaluate(root, runs_dir):
     click.secho(f"\n{cleared}/{len(configs)} checkpoint(s) beat the prior on topology", bold=True)
 
 
+@main.command("world-eval")
+@click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
+@click.option("--model", "model_path", type=click.Path(path_type=Path),
+              default="models/road_v1/road_v1.json", show_default=True)
+@click.option("--split", "split_path", type=click.Path(path_type=Path),
+              default="data/tiles/split.json", show_default=True)
+@click.option("--per-site", type=int, default=8, show_default=True,
+              help="Tiles per environment. The full pipeline runs on each.")
+@click.option("--seed", type=int, default=42, show_default=True)
+def world_eval(root, model_path, split_path, per_site, seed):
+    """Phase 8: judge the generated network the way a game would.
+
+    Runs the whole module -- model, extraction, repair, validation, terrain -- and reports what
+    each stage contributed, how the finished network compares with the real one, and whether the
+    environments stay distinguishable.
+    """
+    import logging
+
+    import numpy as np
+
+    from .analysis.structure import road_structure
+    from .generate import FrozenModel, GenerationParams, generate_roads
+    from .generate.evaluate import GAME_MEASURES, SiteEvaluation, stage_stats, summarise
+    from .pipeline.splits import SplitDefinition
+    from .pipeline.store import read_tile
+
+    logging.basicConfig(level=logging.WARNING, format="  %(message)s", force=True)
+
+    model = FrozenModel.load(Path(model_path))
+    split = SplitDefinition.read(split_path)
+    results = []
+
+    for name, site in sorted(split.sites.items()):
+        tiles = sorted(site.tiles)[:per_site]
+        evaluation = SiteEvaluation(site=name)
+        real_rows, gen_rows, raw_rows, final_rows = [], [], [], []
+
+        for tid in tiles:
+            b = read_tile(Path(root), tid)
+            if b.roads is None or not b.roads.edges:
+                continue
+            roads = generate_roads(model, b.stack, b.tile.read,
+                                   params=GenerationParams(seed=seed))
+            evaluation.tiles += 1
+
+            raw_rows.append(stage_stats("raw ML", _raw_graph(model, b, seed), b.tile))
+            final_rows.append(stage_stats("generated", roads.graph, b.tile))
+            real_rows.append(road_structure(b.roads, b.tile))
+            gen_rows.append(road_structure(roads.graph, b.tile))
+
+        if not evaluation.tiles:
+            continue
+
+        def mean(rows, key):
+            return float(np.nanmean([r[key] for r in rows]))
+
+        for label, rows in (("raw ML", raw_rows), ("generated", final_rows)):
+            evaluation.stages.append(type(rows[0])(
+                name=label,
+                edges=int(np.mean([r.edges for r in rows])),
+                components=int(np.mean([r.components for r in rows])),
+                dead_end_ratio=float(np.mean([r.dead_end_ratio for r in rows])),
+                junctions=int(np.mean([r.junctions for r in rows])),
+                length_km=float(np.mean([r.length_km for r in rows])),
+                over_grade=int(np.mean([r.over_grade for r in rows])),
+            ))
+        evaluation.real = {m: mean(real_rows, m) for m in GAME_MEASURES}
+        evaluation.generated = {m: mean(gen_rows, m) for m in GAME_MEASURES}
+
+        click.echo("")
+        click.echo(evaluation.describe())
+        results.append(evaluation)
+
+    if len(results) > 1:
+        click.echo(summarise(results))
+
+
+def _raw_graph(model, bundle, seed):
+    """The model's unrepaired output, for the before half of the comparison."""
+    from .generate import extract_candidates
+
+    prediction = model.predict(bundle.stack, bundle.tile.read)
+    graph, _ = extract_candidates(prediction, elevation=bundle.channel("elevation"))
+    return graph
+
+
 @main.command("plausibility")
 @click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
 @click.option("--runs", "runs_dir", type=click.Path(path_type=Path), default="runs",

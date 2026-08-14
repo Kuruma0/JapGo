@@ -1035,3 +1035,40 @@ a validator rejects non-string keys outright.
 - **e-Stat population adapter** not yet written; its channels are not in the raster stack.
 - **Aerial imagery** not yet wired. VIRTUAL SHIZUOKA publishes an ortho index (`ORTHO_INDEX` in
   `meshindex`) alongside the terrain one; the adapter path does not read it yet.
+
+## 2026-08-14 — The generation module, and what the procedural layer is worth
+
+Phases 1–8 of the transition off model training. The frozen 191-tile checkpoint is
+`models/road_v1`; `japgo.generate` is the boundary a game-world generator talks to, and imports
+none of the research code.
+
+**The procedural layer's contribution, measured for the first time.** Every earlier number in this
+project scored the model's raw output, which understates the product by exactly the amount the
+deterministic layer contributes — and that layer is where the dead-end defect gets fixed.
+
+| Site | components | dead ends | edges over grade limit | plausible |
+| --- | --- | --- | --- | --- |
+| hamamatsu | 102 → **22** | 66% → **31%** | 0 → 0 | 80% |
+| izu_coast | 29 → **10** | 85% → **56%** | 5 → **0** | **100%** |
+| kawanehon | 31 → **12** | 92% → **67%** | 6 → **0** | 80% |
+
+Three to four times fewer components, dead ends roughly halved, and **every grade violation
+resolved** — by rerouting, not deletion. On the mountain valley the model proposed roads at 70%
+grade and the least-cost search found legal alignments for 30 of 36, reporting honestly that six
+had no route at all. That is invariant 5 doing exactly what it was written for.
+
+**Environment-specificity is partial: 2/5 orderings.** Road density and intersection density rank
+plain, coast and valley as reality does — the two measures that most govern how a place reads.
+Orientation entropy, sinuosity and dead-end ratio do not, and every failure is the same
+izu↔kawanehon swap seen throughout: the coast and the valley are genuinely close on those measures
+in the real data, and a three-way ordering with two similar members is a fragile instrument.
+
+**The dead-end ratio remains the one systematic defect**, at 4.3× and 8.2× reality on two sites
+after repair. Bridging closes what a 45 m gap can reach; beyond that the prediction is fragmented
+past what any deterministic pass can infer. This is now the clearest remaining lever, and it is a
+*model* problem that the corpus curve says more data would address.
+
+**A defect the export caught.** The bundle placed roads at −92 m: the stack's elevation channel is
+tile-relative by design, and geometry emitted it as absolute. Grade was never affected — it is a
+difference and the offset cancels — so nothing upstream noticed. Only absolute placement broke,
+and only at the point where the network leaves the project.
