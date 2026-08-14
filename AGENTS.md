@@ -36,13 +36,13 @@ CLI. The three changes after v2 were regressions, and junction count was a sympt
 structural measures keeping the archetypes in the right order** — density, intersection density,
 orientation entropy and sinuosity all rank plain/coast/valley as reality does. Wrong in placement,
 right in character. The one systematic defect is dead-end ratio at 3–9× reality, which is what the
-unbuilt procedural connectivity pass (invariant 5) exists to fix.
+procedural connectivity pass (invariant 5) exists to fix — **now built**, and it roughly halves it.
 
 **The sweep still says the model does not use terrain correctly** — quantile-mapping a real site's
 slope distribution moves the prediction by the *size* of the change, not its direction, and
 shuffling the channel collapses the output. Do not read Phase 4's pass as evidence otherwise.
 
-Done (428 tests):
+Done (473 tests):
 
 | Package | Contents |
 | --- | --- |
@@ -54,6 +54,7 @@ Done (428 tests):
 | `japgo.viz` | Phase 2 alignment reports — self-contained HTML, no plotting dependency |
 | `japgo.analysis` | Phase 3 study: environmental predictors, road-structure responses, cluster-bootstrapped ranking |
 | `japgo.model` | Phase 4/5: U-Net baseline, non-learned priors, graph extraction, APLS/TOPO, plausibility, sensitivity sweep |
+| `japgo.generate` | The game-facing module: frozen model, extraction, repair, validation, grade enforcement, geometry, export, evaluation, demo pages |
 | ingest | `sources.overpass` (roads), `sources.jismesh` (PLATEAU member selection), `pipeline.remote` (no staging) |
 
 Geospatial stack verified on Windows/py3.13 — GDAL 3.12.4 via wheels, no toolchain build. The
@@ -69,10 +70,24 @@ the wheel still ships gfx1030 kernels before taking one.
 Session transcripts do not travel between machines. [docs/decision-log.md](docs/decision-log.md)
 records what happened when the reasoning met real data — read it alongside the research document.
 
+**The generation module is built and measured — phases 1 to 9 of the transition.** `japgo.generate`
+takes terrain in and emits an engine-agnostic bundle out, importing none of the research code. The
+deterministic layer is worth 3–4× fewer components, dead ends roughly halved, and **every grade
+violation resolved by rerouting** rather than deletion. Environment-specificity is partial at 2/5
+orderings; the failures are all the izu↔kawanehon swap on measures where the two are genuinely
+close in reality. `japgo demo` renders the whole transformation as a self-contained page — use it
+before trusting any table.
+
+**`road_v1` is honest evidence on hamamatsu_plain and nowhere else.** It is the fold holding that
+site out; kawanehon and izu were training data. The card names this in `held_out` and the demo page
+prints it, because a picture carries no fold label and the resemblance on a training tile is partly
+recall.
+
 Next, in order of measured value: **(1) more tiles** — the curve is still linear at 152 and no
-objective change has ever matched it; **(2) the procedural constraint pass** (invariant 5), which
-is unbuilt and is what fixes the dead-end defect and grade violations; **(3) terrain
-responsiveness**, the sweep failure below, which is what separates plausible output from good.
+objective change has ever matched it; **(2) the remaining dead-end gap** — 4.3–8.2× reality *after*
+repair, which bridging cannot close because the prediction is fragmented past what any
+deterministic pass can infer; **(3) terrain responsiveness**, the sweep failure below, which is
+what separates plausible output from good.
 Do not tune the loss further without a reason beyond "the last thing did not work".
 
 **The sweep has produced its first real answer, and it is negative.** `japgo sweep --mode

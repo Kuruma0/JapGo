@@ -53,6 +53,14 @@ class ModelCard:
     threshold: float
     metrics: dict[str, float] = field(default_factory=dict)
     notes: str = ""
+    held_out: list[str] = field(default_factory=list)
+    """Sites this checkpoint never saw. Named rather than described, so a caller can *check*.
+
+    A leave-one-site-out checkpoint is only honest evidence on the site it held out. Every other
+    site in the corpus was training data, and output over one of those tiles is partly recall. The
+    demonstration page reads this field to label each panel, because a page that shows a training
+    tile without saying so overstates the system exactly where it is easiest to be fooled.
+    """
 
     def write(self, path: Path) -> Path:
         path = Path(path)
@@ -63,6 +71,12 @@ class ModelCard:
     @classmethod
     def read(cls, path: Path) -> ModelCard:
         return cls(**json.loads(Path(path).read_text(encoding="utf-8")))
+
+    def unseen(self, site: str | None) -> bool | None:
+        """Whether ``site`` was held out. ``None`` when the card does not say."""
+        if not self.held_out or site is None:
+            return None
+        return site in self.held_out
 
 
 @dataclass(frozen=True)

@@ -758,6 +758,87 @@ def evaluate(root, runs_dir):
     click.secho(f"\n{cleared}/{len(configs)} checkpoint(s) beat the prior on topology", bold=True)
 
 
+@main.command("demo")
+@click.argument("tile_id", required=False)
+@click.option("--site", "sites", multiple=True,
+              help="Demo one representative tile per named site instead of a tile id. "
+                   "Repeatable; no --site and no tile id means every site in the split.")
+@click.option("--split", "split_path", type=click.Path(path_type=Path),
+              default="data/tiles/split.json", show_default=True)
+@click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
+@click.option("--model", "model_path", type=click.Path(path_type=Path),
+              default="models/road_v1/road_v1.json", show_default=True)
+@click.option("--out", type=click.Path(path_type=Path), default="runs/demo", show_default=True)
+@click.option("--seed", type=int, default=42, show_default=True)
+@click.option("--datum", type=float, default=0.0, show_default=True,
+              help="Added to emitted elevations. The stack's channel is tile-relative.")
+def demo(tile_id, sites, split_path, root, model_path, out, seed, datum):
+    """Phase 9: render the whole transformation for one tile, and export its bundle.
+
+    Terrain, the model's proposal, the raw graph, the repaired graph and the final roads, on one
+    self-contained page. Every metric collapses a network to a number; this is the check that
+    tells you whether it reads as roads belonging to a place.
+    """
+    from .generate import FrozenModel, GenerationParams, export_bundle, generate_roads
+    from .generate.candidates import extract_candidates
+    from .generate.demo import build_demo, write_demo
+    from .generate.repair import repair
+    from .pipeline.splits import SplitDefinition
+    from .pipeline.store import read_tile
+
+    model = FrozenModel.load(Path(model_path))
+    params = GenerationParams(seed=seed, elevation_datum_m=datum)
+
+    if tile_id:
+        chosen = [(None, tile_id)]
+    else:
+        # One tile per archetype, chosen for road coverage rather than by position: a tile the
+        # real network barely reaches makes the comparison panel meaningless.
+        split = SplitDefinition.read(Path(split_path))
+        wanted = set(sites) or set(split.sites)
+        unknown = wanted - set(split.sites)
+        if unknown:
+            raise click.BadParameter(f"unknown site(s): {sorted(unknown)}")
+        chosen = []
+        for name in sorted(wanted):
+            best, best_len = None, 0.0
+            for tid in sorted(split.sites[name].tiles):
+                try:
+                    b = read_tile(Path(root), tid)
+                except (FileNotFoundError, KeyError):
+                    continue
+                length = b.roads.total_length_m if b.roads else 0.0
+                if length > best_len:
+                    best, best_len = tid, length
+            if best:
+                chosen.append((name, best))
+
+    for name, tid in chosen:
+        bundle = read_tile(Path(root), tid)
+        elevation = bundle.channel("elevation")
+        roads = generate_roads(model, bundle.stack, bundle.tile.read, params=params)
+
+        # Re-derive the intermediate graphs so each panel shows a real stage, not a redraw.
+        prediction = model.predict(bundle.stack, bundle.tile.read)
+        raw, _ = extract_candidates(prediction, elevation=elevation)
+        repaired, _ = repair(raw, params.repair)
+
+        stages = build_demo(
+            roads, elevation=elevation, probability=prediction.probability,
+            raw_graph=raw, repaired_graph=repaired, real_graph=bundle.roads,
+            resolution_m=model.card.resolution_m,
+        )
+        destination = Path(out) / (name or tid)
+        unseen = model.card.unseen(name)
+        page = write_demo(stages, roads, destination / "demo.html",
+                          title=f"JapGo — {name or tid} — {tid}", unseen=unseen)
+        export_bundle(roads, destination)
+
+        click.secho(f"\n{name or tid}  ({tid})", bold=True)
+        click.echo(roads.diagnostics.describe())
+        click.secho(f"  {page}", fg="green")
+
+
 @main.command("world-eval")
 @click.option("--root", type=click.Path(path_type=Path), default="data/tiles", show_default=True)
 @click.option("--model", "model_path", type=click.Path(path_type=Path),

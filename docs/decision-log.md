@@ -1072,3 +1072,36 @@ past what any deterministic pass can infer. This is now the clearest remaining l
 tile-relative by design, and geometry emitted it as absolute. Grade was never affected — it is a
 difference and the offset cancels — so nothing upstream noticed. Only absolute placement broke,
 and only at the point where the network leaves the project.
+
+## 2026-08-14 — Phase 9: the demonstration page, and the label it forced onto the model card
+
+`japgo demo` renders the whole transformation for one tile onto a single self-contained page —
+terrain, the model's probability field, the extracted graph, the repaired graph, the final roads,
+and the real network beside them — with each stage's numbers under its picture. Same rule as the
+Phase 2 viewer: hand-rolled PNG, inline data URIs, no plotting dependency and no fetch. Panels 3
+to 5 are the same tile at the same scale, so the difference between them is the procedural layer's
+contribution, visible rather than argued.
+
+**The page immediately caught something the metrics could not.** The first kawanehon demo looked
+impressive — the generated network followed the valley corridors closely enough that the
+comparison panel read as a near match. It is a **training tile**. `road_v1` is the fold holding
+out *hamamatsu_plain*; kawanehon and izu were both in its training set, so that resemblance is
+partly recall. Every earlier number in this project was reported per-fold and was never at risk of
+this, but a picture carries no fold label, and a page of pictures is exactly where a reader stops
+checking.
+
+So `ModelCard` now carries **`held_out`** — the sites named, not described, so a caller can check
+rather than parse prose — and the page prints one of three sentences above the panels: held out,
+in training and therefore partly recall, or *the card does not say*. The third case is the
+important one: a card that is silent must not be read as a clean bill.
+
+On the held-out plain the generated network is dense, connected and grid-like at **14% dead ends**
+— the honest demonstration, and the one worth showing. The two training sites sit at 44% and 52%
+with the warning banner attached.
+
+**What the pictures show that the tables did not.** The extracted graph on the coast is visibly
+rubble — 102 components, 80% dead ends, a scatter of fragments along the shoreline — and the same
+tile after repair is recognisably a road network. Reading that as "102 → 30 components" understates
+it. Conversely the plain's real network has loops the generated one does not: the generator emits
+the corridors and misses the connectivity between them, which is the dead-end defect seen from the
+other side.

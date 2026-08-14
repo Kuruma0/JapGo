@@ -1,6 +1,9 @@
 {
   "checkpoint": "models/road_v1/road_v1.pt",
   "trained_on": "191-tile Shizuoka corpus (hamamatsu_plain 85, kawanehon_valley 64, izu_coast 42); this checkpoint is the leave-one-site-out fold holding out hamamatsu_plain, trained on 106 tiles for 12 epochs, seed 0",
+  "held_out": [
+    "hamamatsu_plain"
+  ],
   "channels": [
     "elevation",
     "slope",

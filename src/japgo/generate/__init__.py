@@ -22,6 +22,7 @@ is what makes a seed reproduce a world.
 from __future__ import annotations
 
 from .candidates import CandidateReport, extract_candidates
+from .demo import DemoStage, build_demo, provenance_note, write_demo
 from .geometry import GeometrySpec, JunctionPoint, RoadSpline, build_geometry
 from .inference import DEFAULT_THRESHOLD, FrozenModel, ModelCard, RoadPrediction
 from .pipeline import (
@@ -38,6 +39,10 @@ from .validate import ValidationReport, ValidationSpec, enforce, validate
 __all__ = [
     "DEFAULT_THRESHOLD",
     "CandidateReport",
+    "DemoStage",
+    "build_demo",
+    "provenance_note",
+    "write_demo",
     "FrozenModel",
     "ModelCard",
     "RepairReport",
