@@ -203,3 +203,38 @@ def test_the_exported_bundle_is_engine_agnostic(tmp_path):
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["seed"] == 1 and "total_length_m" in manifest
     assert (out / "junctions.geojson").is_file()
+
+
+def test_elevations_are_labelled_relative_unless_a_datum_is_given():
+    """The stack's elevation channel is tile-relative by design -- raster_stack.yaml subtracts
+    each tile's mean so the model learns slope, not altitude. Exporting it raw puts roads tens of
+    metres underground, and an importer cannot tell by looking."""
+    from japgo.generate import GenerationParams, generate_roads
+    from japgo.geo.tiling import Bounds
+
+    spec, channels = _world()
+    channels[spec.index_of("elevation")] = -40.0        # a tile-relative field, as stored
+    bounds = Bounds(0.0, 0.0, 200.0, 200.0)
+
+    raw = generate_roads(_StubModel(spec), channels, bounds)
+    assert raw.elevation_reference == "tile-relative"
+    assert raw.summary()["elevation_reference"] == "tile-relative"
+    assert raw.splines[0].elevations[0] < 0
+
+    lifted = generate_roads(_StubModel(spec), channels, bounds,
+                            params=GenerationParams(elevation_datum_m=500.0))
+    assert lifted.elevation_reference == "absolute"
+    assert lifted.splines[0].elevations[0] > 400
+
+
+def test_grade_is_unaffected_by_the_datum():
+    """A difference cancels the offset. Only absolute placement was ever wrong."""
+    from japgo.generate import GenerationParams, generate_roads
+    from japgo.geo.tiling import Bounds
+
+    spec, channels = _world()
+    bounds = Bounds(0.0, 0.0, 200.0, 200.0)
+    a = generate_roads(_StubModel(spec), channels, bounds)
+    b = generate_roads(_StubModel(spec), channels, bounds,
+                       params=GenerationParams(elevation_datum_m=1000.0))
+    assert [s.grade_pct for s in a.splines] == [s.grade_pct for s in b.splines]

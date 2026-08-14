@@ -45,6 +45,16 @@ class GenerationParams:
     threshold: float | None = None
     """Probability cut. ``None`` takes the frozen model's calibrated default."""
 
+    elevation_datum_m: float = 0.0
+    """Added to every emitted elevation, to turn a relative heightfield into an absolute one.
+
+    The stack's ``elevation`` channel is **tile-relative** — ``raster_stack.yaml`` subtracts each
+    tile's own mean, deliberately, so the model learns slope rather than "this is a mountain
+    region". Grade is a difference and is unaffected by that offset, but absolute placement is
+    not: exporting the raw channel puts roads tens of metres underground in an engine. Pass the
+    tile's mean elevation here, or supply an absolute raster as ``elevation``.
+    """
+
     repair: RepairSpec = field(default_factory=RepairSpec)
     validation: ValidationSpec = field(default_factory=ValidationSpec)
     terrain: TerrainSpec = field(default_factory=TerrainSpec)
@@ -80,6 +90,10 @@ class GeneratedRoads:
     crs: str
     seed: int
     diagnostics: GenerationDiagnostics
+    elevation_reference: str = "tile-relative"
+    """Whether emitted heights are absolute or relative to the tile mean. Recorded rather than
+    assumed, because an importer cannot tell by looking and a road at -92 m looks like a bug in
+    the engine rather than a datum mismatch."""
 
     @property
     def total_length_m(self) -> float:
@@ -95,16 +109,17 @@ class GeneratedRoads:
             "total_length_m": round(self.total_length_m, 1),
             "components": len(self.graph.connected_components()),
             "dead_end_ratio": round(self.graph.dead_end_ratio, 3),
+            "elevation_reference": self.elevation_reference,
         }
 
 
-def _sampler(elevation: np.ndarray, bounds: Bounds, resolution_m: float):
+def _sampler(elevation: np.ndarray, bounds: Bounds, resolution_m: float, *, datum: float = 0.0):
     rows, cols = elevation.shape
 
     def sample(x: float, y: float) -> float:
         col = int(np.clip((x - bounds.minx) / resolution_m, 0, cols - 1))
         row = int(np.clip((bounds.maxy - y) / resolution_m, 0, rows - 1))
-        return float(elevation[row, col])
+        return float(elevation[row, col]) + datum
 
     return sample
 
@@ -125,6 +140,7 @@ def generate_roads(
     """
     params = params or GenerationParams()
     spec = model.spec
+    supplied = elevation is not None
     if elevation is None:
         elevation = channels[spec.index_of("elevation")]
 
@@ -138,8 +154,11 @@ def generate_roads(
         graph, elevation, bounds, model.card.resolution_m, params.terrain
     )
 
+    datum = params.elevation_datum_m
     splines, junctions = build_geometry(
-        graph, _sampler(elevation, bounds, model.card.resolution_m), spec=params.geometry
+        graph,
+        _sampler(elevation, bounds, model.card.resolution_m, datum=datum),
+        spec=params.geometry,
     )
     return GeneratedRoads(
         graph=graph,
@@ -151,6 +170,9 @@ def generate_roads(
         diagnostics=GenerationDiagnostics(
             candidates=candidates, repair=repair_report,
             validation=validation, terrain=terrain_report,
+        ),
+        elevation_reference=(
+            "absolute" if supplied or params.elevation_datum_m else "tile-relative"
         ),
     )
 
