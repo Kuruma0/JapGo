@@ -1,0 +1,11 @@
+{
+  "name": "com.japgo.roads",
+  "version": "0.1.0",
+  "displayName": "JapGo Roads",
+  "description": "Imports JapGo road bundles — engine-agnostic GeoJSON plus a manifest — into Unity scenes, at edit time or at runtime.",
+  "unity": "2021.3",
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1"
+  },
+  "keywords": ["roads", "procedural", "terrain", "geojson"]
+}

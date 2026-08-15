@@ -221,8 +221,40 @@ def export_bundle(roads: GeneratedRoads, destination: Path) -> Path:
     (destination / "manifest.json").write_text(
         json.dumps({
             **roads.summary(),
+            "local_frame": local_frame(roads),
             "model": asdict(roads.diagnostics.candidates),
             "diagnostics": roads.diagnostics.describe(),
         }, indent=2) + "\n", encoding="utf-8",
     )
     return destination
+
+
+def local_frame(roads: GeneratedRoads) -> dict:
+    """How to place this bundle in a scene, without naming an engine.
+
+    Two things every consumer needs and none should have to re-derive. First, an **origin**:
+    projected coordinates in JGD2011 run to six figures, and a float32 vertex buffer cannot hold
+    -73256.125 without visible jitter, so a bundle that does not say where its local zero is
+    guarantees each importer picks a different one. Second, an **axis convention**: the geometry is
+    east/north/up in metres, right-handed, and every engine permutes that differently.
+
+    The permutation itself is deliberately *not* here. Invariant 1 keeps engine types out of the
+    core, and mapping east/north/up onto a particular engine's axes is the one piece of an
+    importer that is irreducibly engine-specific — it is not shared logic being duplicated, it is
+    the difference between the two importers. What is shared is the origin and the statement of
+    what the axes mean, and that is what this emits.
+    """
+    b = roads.bounds
+    return {
+        "origin": [b.minx, b.miny, 0.0],
+        "size_m": [b.width, b.height],
+        "axes": ["east", "north", "up"],
+        "handedness": "right",
+        "units": "m",
+        "crs": roads.crs,
+        "elevation_reference": roads.elevation_reference,
+        "note": (
+            "Subtract origin from every coordinate to get local metres. Axes are east, north and "
+            "up; permute them into the target engine's convention at import."
+        ),
+    }

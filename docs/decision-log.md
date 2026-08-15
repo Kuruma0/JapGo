@@ -1175,3 +1175,42 @@ extent, which also fixed a 285 s → 8 s regression caused by MIOpen re-tuning o
 windows. `japgo.generate.synthetic` builds terrain from parameters and a seed; its valleys are
 weighted floor replacements rather than `min()` of a V-profile, because the latter facets the
 world into flat planes meeting at straight creases.
+
+## 2026-08-15 — Engine adapters, and the one thing the core had to learn
+
+`adapters/unity` (UPM package) and `adapters/unreal` (plugin) import the interchange bundle. Both
+are consumers: they read the three exported files and build scene objects, neither imports any
+Python, and the core imports neither of them. That direction is invariant 1 and it is why they sit
+outside `src/japgo/`.
+
+**The core gained exactly one thing: `local_frame` in the manifest.** Origin, extent, CRS, units,
+handedness, and the statement that the axes are east/north/up. Two reasons, both of which would
+otherwise be re-derived differently by every importer. The origin is not a convenience —
+projected coordinates in JGD2011 run past 100 km, a 32-bit float holds about a centimetre there,
+and geometry built from raw eastings visibly shimmers as the camera moves. The axis statement is
+what lets an importer permute correctly instead of guessing.
+
+**The permutation itself stayed out of the core**, and that is the interesting call. Invariant 1
+says logic existing in both exporters belongs in the core. This looks like a candidate and is not:
+mapping east/north/up onto Unity's left-handed y-up or Unreal's left-handed z-up centimetres is
+not one piece of logic appearing twice, it is *the* difference between the two importers. Hoisting
+it would mean the core knowing what Unity is.
+
+Both permutations flip handedness exactly once, which is the part worth being careful about.
+Geographic (east, north, up) is right-handed; Unity takes east→x, up→y, north→z and Unreal takes
+north→x, east→y, up→z, each a single swap. Get it wrong — east→x with north→y in Unreal — and
+every junction still meets, every road still follows its valley, and the world is a mirror image
+of itself with no visual tell. `test_the_declared_axes_are_the_ones_the_geometry_actually_uses`
+pins down the claim the reasoning rests on.
+
+**Unreal gets splines, Unity gets meshes**, and that asymmetry is a judgement rather than an
+oversight. Every Unreal project already has a road mesher that consumes `USplineComponent`;
+generating geometry there would be the plugin having opinions about art direction. Unity has no
+equivalent convention, so the package builds a flat ribbon and offers `GenerateMesh = false` with
+the validated centreline exposed for projects that have their own.
+
+**Neither has been compiled.** No Unity and no Unreal on this machine. The parsing, the frame
+maths and the API shapes were worked through carefully and no compiler has seen any of it; the
+READMEs say so in those words. The one thing that *is* automatically verified is the contract —
+the bundle still carrying every field the importers read — because that failure is silent rather
+than loud: a renamed property produces roads at a default width, not an exception.

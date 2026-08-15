@@ -1,0 +1,8 @@
+{
+  "name": "JapGo.Roads.Editor",
+  "rootNamespace": "JapGo.Roads.Editor",
+  "references": ["JapGo.Roads"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "autoReferenced": true
+}

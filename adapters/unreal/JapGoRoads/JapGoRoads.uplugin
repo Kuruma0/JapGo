@@ -1,0 +1,19 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1.0",
+  "FriendlyName": "JapGo Roads",
+  "Description": "Imports JapGo road bundles - engine-agnostic GeoJSON plus a manifest - as spline road networks. Works at runtime, for worlds generated while the game runs.",
+  "Category": "Geometry",
+  "CreatedBy": "JapGo",
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "Installed": false,
+  "Modules": [
+    {
+      "Name": "JapGoRoads",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    }
+  ]
+}

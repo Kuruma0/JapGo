@@ -205,6 +205,37 @@ def test_the_exported_bundle_is_engine_agnostic(tmp_path):
     assert (out / "junctions.geojson").is_file()
 
 
+def test_the_bundle_says_where_its_local_origin_is_and_what_its_axes_mean(tmp_path):
+    """An importer that has to guess either one will guess differently from the next importer.
+
+    Projected coordinates run to six figures and a float32 vertex buffer cannot hold them without
+    jitter, so the origin is not a convenience — it is the difference between a road mesh that
+    sits still and one that shimmers.
+    """
+    from japgo.generate import GenerationParams, export_bundle, generate_roads
+    from japgo.geo.tiling import Bounds
+
+    spec, channels = _world()
+    bounds = Bounds(-73256.0, -144256.0, -73056.0, -144056.0)
+    roads = generate_roads(_StubModel(spec), channels, bounds,
+                           params=GenerationParams(seed=1, elevation_datum_m=12.0))
+    out = export_bundle(roads, tmp_path / "world")
+
+    frame = json.loads((out / "manifest.json").read_text())["local_frame"]
+    assert frame["origin"][:2] == [bounds.minx, bounds.miny]
+    assert frame["axes"] == ["east", "north", "up"]
+    assert frame["handedness"] == "right" and frame["units"] == "m"
+    assert frame["elevation_reference"] == "absolute"
+
+    # Subtracting the origin must land the geometry inside the declared extent, or an importer
+    # following the manifest puts the world in the wrong place.
+    geo = json.loads((out / "roads.geojson").read_text())
+    for feature in geo["features"]:
+        for x, y, _ in feature["geometry"]["coordinates"]:
+            assert 0.0 <= x - frame["origin"][0] <= frame["size_m"][0] + 1e-6
+            assert 0.0 <= y - frame["origin"][1] <= frame["size_m"][1] + 1e-6
+
+
 def test_elevations_are_labelled_relative_unless_a_datum_is_given():
     """The stack's elevation channel is tile-relative by design -- raster_stack.yaml subtracts
     each tile's mean so the model learns slope, not altitude. Exporting it raw puts roads tens of
@@ -238,3 +269,72 @@ def test_grade_is_unaffected_by_the_datum():
     b = generate_roads(_StubModel(spec), channels, bounds,
                        params=GenerationParams(elevation_datum_m=1000.0))
     assert [s.grade_pct for s in a.splines] == [s.grade_pct for s in b.splines]
+
+
+# ---------------------------------------------------------------------------------------------
+# The interchange contract
+# ---------------------------------------------------------------------------------------------
+
+#: Every key the engine adapters under adapters/ read out of a bundle. Listed here rather than
+#: discovered, because the failure being guarded against is silent: rename `width_m` and the
+#: importers do not crash, they quietly build every road at their 5 m default.
+BUNDLE_CONTRACT = {
+    "manifest.json": ["seed", "total_length_m", "local_frame"],
+    "local_frame": ["origin", "size_m", "crs", "units", "handedness", "elevation_reference"],
+    "roads.geojson/properties": ["id", "road_class", "width_m", "grade_pct", "length_m"],
+    "junctions.geojson/properties": ["id", "degree", "incident"],
+}
+
+
+def test_the_bundle_carries_everything_the_engine_adapters_read(tmp_path):
+    """The contract adapters/unity and adapters/unreal depend on.
+
+    Neither adapter can be compiled in this repository, so this is the only automated check that
+    the two ends still agree. It is worth having precisely because the failure mode is quiet: a
+    renamed property produces roads at a default width, not an exception.
+    """
+    from japgo.generate import GenerationParams, export_bundle, generate_roads
+    from japgo.geo.tiling import Bounds
+
+    spec, channels = _world()
+    roads = generate_roads(_StubModel(spec), channels, Bounds(0.0, 0.0, 200.0, 200.0),
+                           params=GenerationParams(seed=5, elevation_datum_m=100.0))
+    out = export_bundle(roads, tmp_path / "world")
+
+    manifest = json.loads((out / "manifest.json").read_text())
+    for key in BUNDLE_CONTRACT["manifest.json"]:
+        assert key in manifest, f"manifest.json lost {key!r}, which both adapters read"
+    for key in BUNDLE_CONTRACT["local_frame"]:
+        assert key in manifest["local_frame"], f"local_frame lost {key!r}"
+
+    road = json.loads((out / "roads.geojson").read_text())["features"][0]
+    for key in BUNDLE_CONTRACT["roads.geojson/properties"]:
+        assert key in road["properties"], f"road properties lost {key!r}"
+    assert len(road["geometry"]["coordinates"][0]) == 3, "adapters read x, y, z per vertex"
+
+    junctions = json.loads((out / "junctions.geojson").read_text())["features"]
+    if junctions:                       # a network with no degree-3 node emits none, legitimately
+        for key in BUNDLE_CONTRACT["junctions.geojson/properties"]:
+            assert key in junctions[0]["properties"], f"junction properties lost {key!r}"
+
+
+def test_the_declared_axes_are_the_ones_the_geometry_actually_uses():
+    """Both adapters permute east/north/up into their engine's axes, and each flips handedness
+    exactly once. That reasoning is only sound if the source really is right-handed east/north/up,
+    which is a claim the manifest makes and this pins down.
+
+    Getting it wrong is undetectable by eye: every junction still meets and every road still
+    follows its valley, in a world that is a mirror image of itself.
+    """
+    from japgo.generate import GenerationParams, generate_roads, local_frame
+    from japgo.geo.tiling import Bounds
+
+    spec, channels = _world()
+    bounds = Bounds(1000.0, 2000.0, 1200.0, 2200.0)
+    roads = generate_roads(_StubModel(spec), channels, bounds, params=GenerationParams(seed=1))
+    frame = local_frame(roads)
+
+    assert frame["axes"] == ["east", "north", "up"] and frame["handedness"] == "right"
+    # x increases east and y increases north: the origin is the south-west corner of the extent.
+    assert frame["origin"][0] == bounds.minx and frame["origin"][1] == bounds.miny
+    assert frame["size_m"] == [bounds.width, bounds.height]

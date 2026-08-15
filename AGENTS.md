@@ -46,7 +46,7 @@ twelve together yielded 1.04 km across 192 km².
 See `japgo blind` and [experiments/blind_generation](experiments/blind_generation/). Phase 4's
 pass is a *reconstruction* result and stands as one; it is not evidence about generation.
 
-Done (492 tests):
+Done (495 tests):
 
 | Package | Contents |
 | --- | --- |
@@ -59,6 +59,7 @@ Done (492 tests):
 | `japgo.analysis` | Phase 3 study: environmental predictors, road-structure responses, cluster-bootstrapped ranking |
 | `japgo.model` | Phase 4/5: U-Net baseline, non-learned priors, graph extraction, APLS/TOPO, plausibility, sensitivity sweep |
 | `japgo.generate` | The game-facing module: frozen model, extraction, repair, validation, grade enforcement, geometry, export, evaluation, demo pages |
+| `adapters/` | Engine importers, outside the core by invariant 1: Unity UPM package, Unreal plugin |
 | ingest | `sources.overpass` (roads), `sources.jismesh` (PLATEAU member selection), `pipeline.remote` (no staging) |
 
 Geospatial stack verified on Windows/py3.13 — GDAL 3.12.4 via wheels, no toolchain build. The
@@ -115,6 +116,19 @@ uses terrain correctly.
 Before trusting Phase 3's ranking as an attribution, note that the terrain predictors are collinear
 (slope/relief/roughness rank together). Use `--scheme loso`, not the configured single-site split —
 see the decision log for why that distinction is worth F1 0.142 against 0.335.
+
+**The engine adapters exist and have never been compiled.** Unity and Unreal are not installed on
+the development machine, so `adapters/` is a careful first draft rather than working software —
+say so before anyone relies on it. What *is* automatically checked is the contract between the
+exporter and the importers: `test_the_bundle_carries_everything_the_engine_adapters_read` fails if
+the bundle stops carrying a field either one reads, which is the failure that would otherwise be
+silent (rename `width_m` and every road quietly imports at a 5 m default).
+
+The bundle now carries a `local_frame` block — origin, extent, and the statement that axes are
+east/north/up metres, right-handed. The origin exists because projected coordinates in JGD2011 run
+past 100 km and a float32 vertex buffer shimmers there. The axis *permutation* is deliberately not
+in the core: it is not shared logic being duplicated between importers, it is the whole difference
+between them.
 
 Still unwritten: the **e-Stat population** adapter and the **aerial imagery** path (`ORTHO_INDEX`
 in `meshindex` is published but unread).

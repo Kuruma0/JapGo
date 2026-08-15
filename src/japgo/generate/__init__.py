@@ -31,6 +31,7 @@ from .pipeline import (
     GenerationParams,
     export_bundle,
     generate_roads,
+    local_frame,
 )
 from .repair import RepairReport, RepairSpec, largest_component, repair
 from .synthetic import ARCHETYPES, SyntheticWorld, TerrainParams, params_for, synthesise
@@ -77,5 +78,6 @@ __all__ = [
     "GenerationDiagnostics",
     "GenerationParams",
     "export_bundle",
+    "local_frame",
     "generate_roads",
 ]
